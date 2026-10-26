@@ -1,0 +1,12 @@
+package app.fuelog;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class FuelogApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(FuelogApplication.class, args);
+    }
+}
