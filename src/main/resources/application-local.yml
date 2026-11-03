@@ -1,8 +1,10 @@
 spring:
+  config:
+    import: optional:file:.env.local[.properties]
   datasource:
-    url: ${DB_URL:jdbc:mariadb://localhost:3306/test}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
+    url: ${DB_URL:jdbc:mariadb://localhost:3306/fuelog}
+    username: ${DB_USERNAME:fuelog}
+    password: ${DB_PASSWORD:fuelog_local}
     driver-class-name: org.mariadb.jdbc.Driver
     hikari:
       maximum-pool-size: 5
@@ -11,6 +13,9 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
 
 logging:
   level:

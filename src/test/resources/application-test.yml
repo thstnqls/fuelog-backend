@@ -9,3 +9,8 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
+fuelog:
+  auth:
+    issuer: https://issuer.test
+    jwk-set-uri: https://issuer.test/.well-known/jwks.json
+    audience: fuelog-api
