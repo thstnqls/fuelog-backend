@@ -91,6 +91,43 @@ class FuelogApplicationTests {
     }
 
     @Test
+    void vehicleHomeOpenApiDescribesInputsAndOutputs() throws Exception {
+        String json = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        var doc = JsonPath.parse(json);
+        String[][] operations = {
+                {"/vehicle/home", "get"},
+                {"/trip-user/challenges", "post"},
+                {"/trip-user/candidates", "post"},
+                {"/trip-user/verify", "post"},
+                {"/trip-user/revoke", "post"},
+                {"/trip-user/events", "get"},
+                {"/mobile/trip-user/consent", "post"},
+                {"/mobile/trip-user/approve", "post"},
+                {"/trip-user/session", "post"},
+                {"/trip-user/session", "delete"},
+                {"/recording-intervals", "post"},
+                {"/recording-intervals/{id}/samples", "post"},
+                {"/recording-intervals/{id}/finish", "post"},
+                {"/sync/status", "get"}
+        };
+        for (String[] operation : operations) {
+            String root = "$['paths']['" + operation[0] + "']['" + operation[1] + "']";
+            assertFalse(((String) doc.read(root + "['summary']")).isBlank(), operation[0]);
+            assertFalse(((String) doc.read(root + "['description']")).isBlank(), operation[0]);
+            Map<String, Object> response = doc.read(root + "['responses']['200']['content']['application/json']");
+            assertTrue(response.containsKey("examples") || response.containsKey("example"), operation[0]);
+        }
+        for (String path : List.of("/trip-user/challenges", "/trip-user/candidates", "/trip-user/verify",
+                "/trip-user/revoke", "/mobile/trip-user/consent", "/mobile/trip-user/approve",
+                "/trip-user/session", "/recording-intervals",
+                "/recording-intervals/{id}/samples", "/recording-intervals/{id}/finish")) {
+            Map<String, Object> body = doc.read("$['paths']['" + path + "']['post']['requestBody']['content']['application/json']");
+            assertTrue(body.containsKey("examples") || body.containsKey("example"), path);
+        }
+    }
+
+    @Test
     void swaggerUiIsServed() throws Exception {
         mockMvc.perform(get("/swagger-ui.html"))
                 .andExpect(status().is3xxRedirection())

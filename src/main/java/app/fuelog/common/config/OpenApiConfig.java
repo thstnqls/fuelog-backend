@@ -18,7 +18,7 @@ public class OpenApiConfig {
                                 .scheme("bearer").bearerFormat("JWT")))
                 .info(new Info()
                         .title("Fuelog API")
-                        .description("차량 앱 설치 등록과 모바일 사용자 차량 페어링 API. 모바일은 Supabase Bearer JWT, 차량 앱은 설치 ID·비밀값 헤더를 사용합니다.")
+                        .description("C01 차량 연결, C02 차량 홈·수동 기록, C03 이번 운행 사용자 확인 API. /connection, /vehicle, /trip-user, /recording-intervals, /sync 경로는 설치별 무작위 Bearer 자격 증명을 사용합니다. /trip-user/revoke는 해당 모바일 사용자 JWT도 받습니다. /mobile 경로는 Supabase JWT를 사용합니다. 기존 /pairing-requests 경로는 설치 ID·비밀값 헤더를 사용합니다.")
                         .version("v1"));
     }
 }
