@@ -326,7 +326,10 @@ pairing_requests 테이블과 유일성 제약을 생성합니다.
 V2는 설치 비밀값의 해시 컬럼을, V3는 intent 접수 때만 확인 코드를 발급할 수
 있도록 nullable 코드 컬럼을 추가합니다. V4는 설치 자격 증명 해시의 유일성
 제약을 추가합니다. V5는 운행 사용자 확인 요청·세션, 수동 기록 구간·배치·샘플과
-설치별 세션 버전을 추가합니다.
+설치별 세션 버전을 추가합니다. V6는 C03 후보·이벤트와 샘플별 검증 사용자
+컬럼을 추가합니다. 폐기 가능한 DB에서만 `local,seed` 프로파일을 사용하면
+V7의 테이블별 목업 `INSERT`가 적용됩니다. 적용 방법과 주의점은
+[`db/migration/README.md`](src/main/resources/db/migration/README.md)에 있습니다.
 local 프로파일은 기존 DB에 Flyway 이력 없이 다른 테이블이 있을 때 version 0으로
 baseline을 만든 뒤 V1을 적용합니다. 운영 DB는 Flyway 이력과 기존 스키마를
 별도로 검토한 뒤 마이그레이션해야 합니다.
