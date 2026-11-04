@@ -15,10 +15,23 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
     @Bean
+    @Order(1)
+    SecurityFilterChain installationSecurityFilterChain(HttpSecurity http) throws Exception {
+        return http.securityMatcher("/connection/**", "/vehicle/**", "/trip-user/**",
+                        "/recording-intervals/**", "/sync/**")
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+                .build();
+    }
+
+    @Bean
+    @Order(2)
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         return http.csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
@@ -28,7 +41,20 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/installations/me", "/pairing-requests/current",
                                 "/pairing-requests/*").permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
+                .oauth2ResourceServer(oauth -> oauth
+                        .authenticationEntryPoint((request, response, exception) -> {
+                            if (request.getRequestURI().startsWith("/mobile/connection/")
+                                    || request.getRequestURI().startsWith("/mobile/trip-user/")) {
+                                response.setStatus(401);
+                                response.setContentType("application/json");
+                                response.setHeader("Cache-Control", "no-store");
+                                response.setHeader("WWW-Authenticate", "Bearer");
+                                response.getWriter().write("{\"code\":\"INVALID_USER_TOKEN\"}");
+                            } else {
+                                new BearerTokenAuthenticationEntryPoint().commence(request, response, exception);
+                            }
+                        })
+                        .jwt(Customizer.withDefaults()))
                 .build();
     }
 

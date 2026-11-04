@@ -13,6 +13,7 @@ public record PairingRequest(
         UUID selectedVehicleId,
         String newVehicleName,
         UUID approvedUserId,
+        String issueKey,
         String intentKey,
         String confirmationCode
 ) {

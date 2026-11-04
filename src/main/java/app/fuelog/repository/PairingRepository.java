@@ -19,7 +19,7 @@ public class PairingRepository {
             UUID.fromString(rs.getString("id")), UUID.fromString(rs.getString("installation_id")),
             rs.getBytes("proof_hash"), rs.getString("status"), utc(rs.getObject("expires_at", LocalDateTime.class)),
             uuid(rs.getString("selected_vehicle_id")), rs.getString("new_vehicle_name"),
-            uuid(rs.getString("approved_user_id")), rs.getString("intent_key"), rs.getString("confirmation_code"));
+            uuid(rs.getString("approved_user_id")), rs.getString("issue_key"), rs.getString("intent_key"), rs.getString("confirmation_code"));
 
     public PairingRepository(JdbcTemplate db) { this.db = db; }
 
@@ -31,6 +31,27 @@ public class PairingRepository {
     public byte[] credentialHash(UUID installation) {
         List<byte[]> rows = db.query("SELECT credential_hash FROM vehicle_installations WHERE id=?",
                 (rs, n) -> rs.getBytes(1), installation.toString());
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
+    public UUID installationByCredentialHash(byte[] hash) {
+        List<String> rows = db.query("SELECT id FROM vehicle_installations WHERE credential_hash=?",
+                (rs, n) -> rs.getString(1), hash);
+        return rows.isEmpty() ? null : UUID.fromString(rows.getFirst());
+    }
+
+    public UUID ensureInstallation(byte[] hash, Instant now) {
+        db.update("INSERT INTO vehicle_installations (id, credential_hash, created_at, updated_at) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=id",
+                UUID.randomUUID().toString(), hash, time(now), time(now));
+        List<String> rows = db.query("SELECT id FROM vehicle_installations WHERE credential_hash=? FOR UPDATE",
+                (rs, n) -> rs.getString(1), hash);
+        if (rows.isEmpty()) throw new IllegalStateException("Installation upsert did not return a row");
+        return UUID.fromString(rows.getFirst());
+    }
+
+    public PairingRequest requestForIssueKey(UUID installation, String key) {
+        List<PairingRequest> rows = db.query("SELECT * FROM pairing_requests WHERE installation_id=? AND issue_key=?",
+                mapper, installation.toString(), key);
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
@@ -113,6 +134,21 @@ public class PairingRepository {
     public void complete(UUID request, UUID vehicle, Instant now) {
         db.update("UPDATE pairing_requests SET status='completed', active_installation_id=NULL, selected_vehicle_id=?, proof_hash=NULL, updated_at=? WHERE id=?",
                 vehicle.toString(), time(now), request.toString());
+    }
+
+    public void completeDirect(UUID request, UUID vehicle, UUID user, String key, Instant now) {
+        db.update("UPDATE pairing_requests SET status='completed', active_installation_id=NULL, selected_vehicle_id=?, approved_user_id=?, intent_key=?, proof_hash=NULL, updated_at=? WHERE id=? AND status='pending'",
+                vehicle.toString(), user.toString(), key, time(now), request.toString());
+    }
+
+    public void unlinkInstallation(UUID installation, Instant now) {
+        db.update("UPDATE vehicle_installations SET vehicle_id=NULL, updated_at=? WHERE id=?",
+                time(now), installation.toString());
+    }
+
+    public void revokeForReset(UUID installation, Instant now) {
+        db.update("UPDATE pairing_requests SET status='revoked', active_installation_id=NULL, proof_hash=NULL, updated_at=? WHERE installation_id=? AND status IN ('pending','awaiting_vehicle_confirmation','completed')",
+                time(now), installation.toString());
     }
 
     public void expireOne(UUID id, Instant now) {

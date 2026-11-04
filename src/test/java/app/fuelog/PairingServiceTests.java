@@ -1,6 +1,8 @@
 package app.fuelog;
 
 import app.fuelog.dto.PairingDtos;
+import app.fuelog.dto.ConnectionDtos;
+import app.fuelog.service.ConnectionService;
 import app.fuelog.service.PairingService;
 import java.util.UUID;
 import java.util.List;
@@ -30,19 +32,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PairingServiceTests {
     @Autowired JdbcTemplate db;
     @Autowired PairingService service;
+    @Autowired ConnectionService connectionService;
     @Autowired MockMvc mvc;
     @MockitoBean JwtDecoder decoder;
 
     @BeforeEach
     void schema() {
-        db.execute("DROP TABLE IF EXISTS group_members");
-        db.execute("DROP TABLE IF EXISTS pairing_requests");
-        db.execute("DROP TABLE IF EXISTS vehicle_installations");
-        db.execute("DROP TABLE IF EXISTS vehicles");
-        db.execute("CREATE TABLE vehicles (id VARCHAR(36) PRIMARY KEY, name VARCHAR(100), created_by VARCHAR(36), source_request_id VARCHAR(36) UNIQUE, created_at TIMESTAMP, updated_at TIMESTAMP)");
-        db.execute("CREATE TABLE vehicle_installations (id VARCHAR(36) PRIMARY KEY, vehicle_id VARCHAR(36) UNIQUE, credential_hash BINARY(32), created_at TIMESTAMP, updated_at TIMESTAMP)");
-        db.execute("CREATE TABLE pairing_requests (id VARCHAR(36) PRIMARY KEY, installation_id VARCHAR(36), active_installation_id VARCHAR(36) UNIQUE, proof_hash BINARY(32), status VARCHAR(40), expires_at TIMESTAMP, selected_vehicle_id VARCHAR(36), new_vehicle_name VARCHAR(100), approved_user_id VARCHAR(36), issue_key VARCHAR(100), intent_key VARCHAR(100), confirmation_code VARCHAR(6), created_at TIMESTAMP, updated_at TIMESTAMP, UNIQUE(installation_id, issue_key))");
-        db.execute("CREATE TABLE group_members (vehicle_id VARCHAR(36), user_id VARCHAR(36), role VARCHAR(20), created_at TIMESTAMP, PRIMARY KEY(vehicle_id,user_id))");
+        TestSchema.create(db);
     }
 
     @Test
@@ -182,6 +178,233 @@ class PairingServiceTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmation_code\":\"" + code + "\"}"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void androidContractRetriesRevokesAndApprovesExistingVehicleOnce() throws Exception {
+        UUID firstOperation = UUID.randomUUID();
+        UUID secondOperation = UUID.randomUUID();
+        UUID user = UUID.randomUUID();
+        UUID vehicle = UUID.randomUUID();
+        UUID approvalKey = UUID.randomUUID();
+        byte[] credentialBytes = new byte[32];
+        new java.security.SecureRandom().nextBytes(credentialBytes);
+        String bearer = "Bearer " + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(credentialBytes);
+        when(decoder.decode("user-token")).thenReturn(jwt(user));
+
+        String firstBody = "{\"operationId\":\"" + firstOperation + "\",\"requestId\":\"\"}";
+        mvc.perform(post("/connection/requests").contentType(MediaType.APPLICATION_JSON).content(firstBody))
+                .andExpect(status().isUnauthorized())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("INVALID_INSTALLATION_CREDENTIAL"));
+        String first = mvc.perform(post("/connection/requests").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(firstBody))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                        .string("Cache-Control", "no-store"))
+                .andReturn().getResponse().getContentAsString();
+        String firstId = JsonPath.read(first, "$.requestId");
+        String firstNonce = JsonPath.read(first, "$.nonce");
+        assertEquals("WAITING", JsonPath.read(first, "$.status"));
+        assertEquals(43, firstNonce.length());
+        mvc.perform(post("/mobile/connection/inspect")
+                        .contentType(MediaType.APPLICATION_JSON).content(envelope(firstId, firstNonce)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code")
+                        .value("INVALID_USER_TOKEN"));
+        String retry = mvc.perform(post("/connection/requests").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(firstBody))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals(firstId, JsonPath.read(retry, "$.requestId"));
+        assertEquals(firstNonce, JsonPath.read(retry, "$.nonce"));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations", Integer.class));
+
+        String secondBody = "{\"operationId\":\"" + secondOperation + "\",\"requestId\":\"" + firstId + "\"}";
+        String second = mvc.perform(post("/connection/requests").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content(secondBody))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String secondId = JsonPath.read(second, "$.requestId");
+        String secondNonce = JsonPath.read(second, "$.nonce");
+        String oldStatus = mvc.perform(post("/connection/requests/status").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + firstOperation + "\",\"requestId\":\"" + firstId + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals("REVOKED", JsonPath.read(oldStatus, "$.status"));
+        mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(envelope(firstId, firstNonce)))
+                .andExpect(status().isGone());
+
+        mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(envelope(secondId, secondNonce)))
+                .andExpect(status().isOk());
+        String approval = "{\"requestId\":\"" + secondId + "\",\"nonce\":\"" + secondNonce
+                + "\",\"vehicleId\":\"" + vehicle + "\",\"idempotencyKey\":\"" + approvalKey + "\"}";
+        mvc.perform(post("/mobile/connection/approve").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isForbidden());
+        db.update("INSERT INTO vehicles (id,name,created_by,created_at,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                vehicle.toString(), "Existing", user.toString());
+        db.update("INSERT INTO group_members (vehicle_id,user_id,role,created_at) VALUES (?,?,?,CURRENT_TIMESTAMP)",
+                vehicle.toString(), user.toString(), "OWNER");
+        mvc.perform(post("/mobile/connection/approve").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isOk());
+        mvc.perform(post("/mobile/connection/approve").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(approval.replace(approvalKey.toString(), UUID.randomUUID().toString())))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/mobile/connection/approve").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isOk());
+        mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(envelope(secondId, secondNonce)))
+                .andExpect(status().isConflict());
+        String done = mvc.perform(post("/connection/requests/status").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + secondOperation + "\",\"requestId\":\"" + secondId + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals("COMPLETED", JsonPath.read(done, "$.status"));
+        assertNull(JsonPath.read(done, "$.nonce"));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations WHERE vehicle_id IS NOT NULL", Integer.class));
+        assertNull(db.queryForObject("SELECT proof_hash FROM pairing_requests WHERE id=?", byte[].class, secondId));
+
+        mvc.perform(post("/connection/reset").header("Authorization", bearer)
+                        .header("X-User-Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"vehicleId\":\"" + vehicle + "\"}"))
+                .andExpect(status().isForbidden());
+        when(decoder.decode("fresh-user-token")).thenReturn(recentOtpJwt(user));
+        mvc.perform(post("/connection/reset").header("Authorization", bearer)
+                        .header("X-User-Authorization", "Bearer fresh-user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"vehicleId\":\"" + vehicle + "\"}"))
+                .andExpect(status().isOk());
+        assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations WHERE vehicle_id IS NOT NULL", Integer.class));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+        mvc.perform(post("/mobile/connection/approve").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(approval))
+                .andExpect(status().isGone());
+        String resetStatus = mvc.perform(post("/connection/requests/status").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + secondOperation + "\",\"requestId\":\"" + secondId + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals("REVOKED", JsonPath.read(resetStatus, "$.status"));
+    }
+
+    @Test
+    void androidContractRejectsExpiredQrAndOtherInstallation() throws Exception {
+        String credentialOne = randomBearer();
+        String credentialTwo = randomBearer();
+        UUID operationOne = UUID.randomUUID();
+        UUID operationTwo = UUID.randomUUID();
+        String one = issueConnection(credentialOne, operationOne);
+        String two = issueConnection(credentialTwo, operationTwo);
+        String firstId = JsonPath.read(one, "$.requestId");
+        String nonce = JsonPath.read(one, "$.nonce");
+        mvc.perform(post("/connection/requests/status").header("Authorization", credentialTwo)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + operationOne + "\",\"requestId\":\"" + firstId + "\"}"))
+                .andExpect(status().isForbidden());
+        assertNotEquals(firstId, JsonPath.read(two, "$.requestId"));
+        db.update("UPDATE pairing_requests SET expires_at=? WHERE id=?",
+                java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(1), java.time.ZoneOffset.UTC), firstId);
+        when(decoder.decode("user-token")).thenReturn(jwt(UUID.randomUUID()));
+        mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(envelope(firstId, nonce)))
+                .andExpect(status().isGone());
+        String expired = mvc.perform(post("/connection/requests/status").header("Authorization", credentialOne)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + operationOne + "\",\"requestId\":\"" + firstId + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertEquals("EXPIRED", JsonPath.read(expired, "$.status"));
+    }
+
+    @Test
+    void concurrentFirstRequestWithSameOperationReturnsOneQr() throws Exception {
+        String bearer = randomBearer();
+        var body = new ConnectionDtos.RequestBody(UUID.randomUUID().toString(), "");
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<ConnectionDtos.Response> call = () -> {
+                start.await();
+                return connectionService.issue(bearer, body);
+            };
+            var first = pool.submit(call);
+            var second = pool.submit(call);
+            start.countDown();
+            var a = first.get();
+            var b = second.get();
+            assertEquals(a.requestId(), b.requestId());
+            assertEquals(a.nonce(), b.nonce());
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM pairing_requests", Integer.class));
+            assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations", Integer.class));
+        }
+    }
+
+    @Test
+    void concurrentApprovalsCreateOnlyOneConnection() throws Exception {
+        UUID user = UUID.randomUUID();
+        UUID vehicle = UUID.randomUUID();
+        db.update("INSERT INTO vehicles (id,name,created_by,created_at,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                vehicle.toString(), "Existing", user.toString());
+        db.update("INSERT INTO group_members (vehicle_id,user_id,role,created_at) VALUES (?,?,?,CURRENT_TIMESTAMP)",
+                vehicle.toString(), user.toString(), "OWNER");
+        var issued = connectionService.issue(randomBearer(),
+                new ConnectionDtos.RequestBody(UUID.randomUUID().toString(), ""));
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(2)) {
+            java.util.concurrent.Callable<Boolean> first = () -> approveAfterLatch(start, user, issued, vehicle);
+            java.util.concurrent.Callable<Boolean> second = () -> approveAfterLatch(start, user, issued, vehicle);
+            var a = pool.submit(first);
+            var b = pool.submit(second);
+            start.countDown();
+            assertEquals(1, (a.get() ? 1 : 0) + (b.get() ? 1 : 0));
+        }
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations WHERE vehicle_id IS NOT NULL", Integer.class));
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM pairing_requests WHERE status='completed'", Integer.class));
+    }
+
+    private boolean approveAfterLatch(java.util.concurrent.CountDownLatch start, UUID user,
+            ConnectionDtos.Response issued, UUID vehicle) throws InterruptedException {
+        start.await();
+        try {
+            connectionService.approve(user, new ConnectionDtos.ApproveBody(
+                    issued.requestId(), issued.nonce(), vehicle, UUID.randomUUID().toString()));
+            return true;
+        } catch (org.springframework.web.server.ResponseStatusException ex) {
+            assertEquals(409, ex.getStatusCode().value());
+            return false;
+        }
+    }
+
+    private String issueConnection(String bearer, UUID operation) throws Exception {
+        return mvc.perform(post("/connection/requests").header("Authorization", bearer)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"operationId\":\"" + operation + "\",\"requestId\":null}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+    }
+
+    private static String randomBearer() {
+        byte[] value = new byte[32];
+        new java.security.SecureRandom().nextBytes(value);
+        return "Bearer " + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(value);
+    }
+
+    private static Jwt recentOtpJwt(UUID subject) {
+        return Jwt.withTokenValue("fresh-user-token")
+                .header("alg", "ES256")
+                .subject(subject.toString())
+                .claim("role", "authenticated")
+                .claim("is_anonymous", false)
+                .claim("amr", List.of(java.util.Map.of("method", "otp", "timestamp", Instant.now().getEpochSecond())))
+                .issuedAt(Instant.now().minusSeconds(5))
+                .expiresAt(Instant.now().plusSeconds(300)).build();
+    }
+
+    private static String envelope(String id, String nonce) {
+        return "{\"type\":\"fuelog.vehicle-registration\",\"version\":1,\"requestId\":\"" + id
+                + "\",\"nonce\":\"" + nonce + "\"}";
     }
 
     private static Jwt jwt(UUID subject) {
