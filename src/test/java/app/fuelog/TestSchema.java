@@ -6,6 +6,13 @@ final class TestSchema {
     private TestSchema() {}
 
     static void create(JdbcTemplate db) {
+        db.execute("DROP TABLE IF EXISTS maintenance_event_audit");
+        db.execute("DROP TABLE IF EXISTS maintenance_events");
+        db.execute("DROP TABLE IF EXISTS maintenance_plans");
+        db.execute("DROP TABLE IF EXISTS maintenance_manufacturer_evidence");
+        db.execute("DROP TABLE IF EXISTS vehicle_maintenance_profiles");
+        db.execute("DROP TABLE IF EXISTS vehicle_maintenance_state");
+        db.execute("DROP TABLE IF EXISTS vehicle_odometer_samples");
         db.execute("DROP TABLE IF EXISTS mobile_trip_inbox");
         db.execute("DROP TABLE IF EXISTS trip_summaries");
         db.execute("DROP TABLE IF EXISTS recording_samples");
@@ -34,5 +41,8 @@ final class TestSchema {
         db.execute("CREATE TABLE recording_samples (interval_id VARCHAR(36), sequence BIGINT, batch_id VARCHAR(100), observed_at TIMESTAMP, distance_km DECIMAL(12,3), missing_reason VARCHAR(40), fuel_liters DECIMAL(10,3), fuel_status VARCHAR(20), received_at TIMESTAMP, user_id VARCHAR(36), verified_candidate_id VARCHAR(36), PRIMARY KEY(interval_id,sequence))");
         db.execute("CREATE TABLE trip_summaries (id BIGINT AUTO_INCREMENT PRIMARY KEY, installation_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, vehicle_id VARCHAR(36) NOT NULL, user_id VARCHAR(36), consent_id VARCHAR(36), revision BIGINT NOT NULL, payload_hash BINARY(32) NOT NULL, payload CLOB NOT NULL, synced_at TIMESTAMP NOT NULL, UNIQUE(installation_id,trip_id))");
         db.execute("CREATE TABLE mobile_trip_inbox (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, summary_id BIGINT NOT NULL, trip_revision BIGINT NOT NULL, snapshot CLOB NOT NULL, delivered_at TIMESTAMP NOT NULL, read_at TIMESTAMP, UNIQUE(recipient_id,trip_id))");
+        new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
+                new org.springframework.core.io.ClassPathResource("db/migration/V10__maintenance_and_odometer.sql"))
+                .execute(java.util.Objects.requireNonNull(db.getDataSource()));
     }
 }

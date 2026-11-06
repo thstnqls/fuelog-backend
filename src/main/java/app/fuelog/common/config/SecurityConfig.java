@@ -24,7 +24,8 @@ public class SecurityConfig {
     @Order(1)
     SecurityFilterChain installationSecurityFilterChain(HttpSecurity http) throws Exception {
         return http.securityMatcher("/connection/**", "/vehicle/**", "/trip-user/**",
-                        "/recording-intervals/**", "/sync/**", "/mobile-inbox/**")
+                        "/recording-intervals/**", "/sync/**", "/mobile-inbox/**",
+                        "/maintenance/**", "/vehicle-odometer/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .build();
@@ -45,7 +46,8 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, exception) -> {
                             if (request.getRequestURI().startsWith("/mobile/connection/")
                                     || request.getRequestURI().startsWith("/mobile/trip-user/")
-                                    || request.getRequestURI().startsWith("/mobile/inbox")) {
+                                    || request.getRequestURI().startsWith("/mobile/inbox")
+                                    || request.getRequestURI().startsWith("/mobile/vehicles/")) {
                                 response.setStatus(401);
                                 response.setContentType("application/json");
                                 response.setHeader("Cache-Control", "no-store");

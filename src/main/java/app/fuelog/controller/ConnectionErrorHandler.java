@@ -15,7 +15,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 @RestControllerAdvice(assignableTypes = {ConnectionController.class, MobileConnectionController.class,
         VehicleHomeController.class, MobileTripUserController.class, TripUserCandidateController.class,
-        TripSummaryController.class, MobileInboxController.class})
+        TripSummaryController.class, MobileInboxController.class,
+        MaintenanceController.class, MobileMaintenanceController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ConnectionErrorHandler {
     @ExceptionHandler(ResponseStatusException.class)
