@@ -145,6 +145,13 @@ public class VehicleHomeRepository {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
+    public Interval intervalByTripId(UUID installation, UUID tripId) {
+        var rows = db.query("SELECT * FROM recording_intervals WHERE installation_id=? AND (id=? OR local_interval_id=?) FOR UPDATE",
+                intervalMapper, installation.toString(), tripId.toString(), tripId.toString());
+        if (rows.size() > 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "AMBIGUOUS_TRIP_ID");
+        return rows.isEmpty() ? null : rows.getFirst();
+    }
+
     public Interval interval(UUID id, boolean lock) {
         List<Interval> rows = db.query("SELECT * FROM recording_intervals WHERE id=?" + (lock ? " FOR UPDATE" : ""),
                 intervalMapper, id.toString());

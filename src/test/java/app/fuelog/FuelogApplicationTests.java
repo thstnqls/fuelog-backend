@@ -140,4 +140,21 @@ class FuelogApplicationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.url").value("/v3/api-docs"));
     }
+
+    @Test
+    void tripSummaryOpenApiDescribesAllOperations() throws Exception {
+        var doc = JsonPath.parse(mockMvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        String[][] operations = {{"/recording-intervals/{tripId}", "put"},
+                {"/recording-intervals/{tripId}/summary", "get"},
+                {"/mobile-inbox/trips/{tripId}", "put"}, {"/mobile/inbox", "get"},
+                {"/mobile/inbox/{itemId}", "patch"}};
+        for (var operation : operations) {
+            String path = "$['paths']['" + operation[0] + "']['" + operation[1] + "']";
+            assertFalse(((String) doc.read(path + "['summary']")).isBlank());
+            assertFalse(((String) doc.read(path + "['description']")).isBlank());
+            Map<String, Object> response = doc.read(path + "['responses']['200']['content']['application/json']");
+            assertTrue(response.containsKey("examples") || response.containsKey("example"));
+        }
+    }
 }

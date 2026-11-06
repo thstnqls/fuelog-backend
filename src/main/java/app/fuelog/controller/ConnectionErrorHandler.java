@@ -11,9 +11,11 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice(assignableTypes = {ConnectionController.class, MobileConnectionController.class,
-        VehicleHomeController.class, MobileTripUserController.class, TripUserCandidateController.class})
+        VehicleHomeController.class, MobileTripUserController.class, TripUserCandidateController.class,
+        TripSummaryController.class, MobileInboxController.class})
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class ConnectionErrorHandler {
     @ExceptionHandler(ResponseStatusException.class)
@@ -30,6 +32,11 @@ public class ConnectionErrorHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<Map<String, String>> unreadableBody() {
+        return ResponseEntity.badRequest().body(Map.of("code", "INVALID_REQUEST"));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<Map<String, String>> invalidParameter() {
         return ResponseEntity.badRequest().body(Map.of("code", "INVALID_REQUEST"));
     }
 

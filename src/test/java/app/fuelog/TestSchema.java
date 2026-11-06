@@ -6,6 +6,8 @@ final class TestSchema {
     private TestSchema() {}
 
     static void create(JdbcTemplate db) {
+        db.execute("DROP TABLE IF EXISTS mobile_trip_inbox");
+        db.execute("DROP TABLE IF EXISTS trip_summaries");
         db.execute("DROP TABLE IF EXISTS recording_samples");
         db.execute("DROP TABLE IF EXISTS recording_batches");
         db.execute("DROP TABLE IF EXISTS trip_user_events");
@@ -30,5 +32,7 @@ final class TestSchema {
         db.execute("CREATE TABLE trip_user_events (installation_id VARCHAR(36), revision BIGINT, event_type VARCHAR(30), created_at TIMESTAMP, PRIMARY KEY(installation_id,revision))");
         db.execute("CREATE TABLE recording_batches (interval_id VARCHAR(36), batch_id VARCHAR(100), payload_hash BINARY(32), accepted_count INT, last_accepted_sequence BIGINT, received_at TIMESTAMP, PRIMARY KEY(interval_id,batch_id))");
         db.execute("CREATE TABLE recording_samples (interval_id VARCHAR(36), sequence BIGINT, batch_id VARCHAR(100), observed_at TIMESTAMP, distance_km DECIMAL(12,3), missing_reason VARCHAR(40), fuel_liters DECIMAL(10,3), fuel_status VARCHAR(20), received_at TIMESTAMP, user_id VARCHAR(36), verified_candidate_id VARCHAR(36), PRIMARY KEY(interval_id,sequence))");
+        db.execute("CREATE TABLE trip_summaries (id BIGINT AUTO_INCREMENT PRIMARY KEY, installation_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, vehicle_id VARCHAR(36) NOT NULL, user_id VARCHAR(36), consent_id VARCHAR(36), revision BIGINT NOT NULL, payload_hash BINARY(32) NOT NULL, payload CLOB NOT NULL, synced_at TIMESTAMP NOT NULL, UNIQUE(installation_id,trip_id))");
+        db.execute("CREATE TABLE mobile_trip_inbox (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, summary_id BIGINT NOT NULL, trip_revision BIGINT NOT NULL, snapshot CLOB NOT NULL, delivered_at TIMESTAMP NOT NULL, read_at TIMESTAMP, UNIQUE(recipient_id,trip_id))");
     }
 }
