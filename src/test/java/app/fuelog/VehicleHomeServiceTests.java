@@ -33,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class VehicleHomeServiceTests {
     @Autowired JdbcTemplate db;
     @Autowired PairingService pairing;
-    @Autowired ConnectionService connection;
+    @Autowired app.fuelog.service.ConnectionSettingsService settings;
     @Autowired VehicleHomeService homeService;
     @Autowired MockMvc mvc;
     @MockitoBean JwtDecoder decoder;
@@ -233,7 +233,7 @@ class VehicleHomeServiceTests {
     }
 
     @Test
-    void connectionResetRevokesTripSessionAndKeepsRecordingHistory() throws Exception {
+    void userDisconnectRevokesTripSessionAndKeepsRecordingHistory() throws Exception {
         String challenge = challenge("before-reset");
         approveChallenge(challenge, "mobile-user");
         String active = session(JsonPath.read(challenge, "$.challengeId"));
@@ -243,7 +243,8 @@ class VehicleHomeServiceTests {
 
         db.update("UPDATE group_members SET role='OWNER' WHERE vehicle_id=? AND user_id=?",
                 vehicle.toString(), user.toString());
-        connection.reset(bearer, user, vehicle);
+        settings.disconnect(bearer,new app.fuelog.dto.ConnectionSettingsDtos.Disconnect(
+                app.fuelog.dto.ConnectionSettingsDtos.Kind.USER,"preserve-recording"));
         mvc.perform(get("/vehicle/home").header("Authorization", bearer)
                         .header("X-Trip-User-Session", scoped))
                 .andExpect(status().isUnauthorized());

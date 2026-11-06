@@ -32,6 +32,7 @@ public class VehicleHomeService {
     private static final Duration SESSION_LIFETIME = Duration.ofMinutes(30);
     private static final Duration SAMPLE_FRESHNESS = Duration.ofMinutes(1);
     private static final Duration CLOCK_SKEW_TOLERANCE = Duration.ofMinutes(5);
+    private final InstallationAccess access;
     private final PairingRepository pairing;
     private final VehicleHomeRepository repository;
     private final InstallationAuth auth;
@@ -39,7 +40,8 @@ public class VehicleHomeService {
     private final TripUserCandidateRepository candidates;
 
     public VehicleHomeService(PairingRepository pairing, VehicleHomeRepository repository,
-                              InstallationAuth auth, PairingActor actor, TripUserCandidateRepository candidates) {
+                              InstallationAuth auth, PairingActor actor, TripUserCandidateRepository candidates, InstallationAccess access) {
+        this.access=access;
         this.pairing = pairing;
         this.repository = repository;
         this.auth = auth;
@@ -53,6 +55,7 @@ public class VehicleHomeService {
         if (body.installationId() != null && !installation.id().equals(body.installationId()))
             fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         pairing.lockInstallation(installation.id());
+        access.requireChallenge(installation.id());
         UUID vehicle = linkedVehicle(installation.id());
         UUID intervalId = body.intervalId();
         if (intervalId != null) {
@@ -101,6 +104,7 @@ public class VehicleHomeService {
             fail(HttpStatus.FORBIDDEN, "VEHICLE_MISMATCH");
         requireProof(challenge.proofHash(), body.proof());
         if (!repository.member(user, body.vehicleId())) fail(HttpStatus.FORBIDDEN, "VEHICLE_MEMBERSHIP_REQUIRED");
+        access.verified(challenge.installationId(),challenge.id());
         String displayName = displayName(jwt);
         repository.revokeActiveSessions(challenge.installationId(), now);
         long version = repository.incrementSessionVersion(challenge.installationId());
@@ -198,6 +202,7 @@ public class VehicleHomeService {
     public VehicleHomeDtos.Interval start(String bearer, String scopedBearer, VehicleHomeDtos.IntervalStartRequest body) {
         var installation = auth.require(bearer);
         pairing.lockInstallation(installation.id());
+        access.requireChallenge(installation.id());
         UUID vehicle = linkedVehicle(installation.id());
         Session session = scopedBearer == null ? null : requireSession(installation.id(), scopedBearer);
         Interval existing = repository.intervalByLocalId(installation.id(), body.localIntervalId());
@@ -219,6 +224,7 @@ public class VehicleHomeService {
                                                    VehicleHomeDtos.SamplesRequest body) {
         var installation = auth.require(bearer);
         pairing.lockInstallation(installation.id());
+        access.requireCollection(installation.id());
         Interval interval = repository.interval(id, true);
         if (!installation.id().equals(interval.installationId())) fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         if (!interval.vehicleId().equals(pairing.linkedVehicle(installation.id())))
@@ -277,6 +283,7 @@ public class VehicleHomeService {
     public VehicleHomeDtos.Interval finish(String bearer, UUID id, VehicleHomeDtos.FinishRequest body) {
         var installation = auth.require(bearer);
         pairing.lockInstallation(installation.id());
+        access.requireCollection(installation.id());
         Interval interval = repository.interval(id, true);
         if (!installation.id().equals(interval.installationId())) fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         if (!interval.vehicleId().equals(pairing.linkedVehicle(installation.id())))

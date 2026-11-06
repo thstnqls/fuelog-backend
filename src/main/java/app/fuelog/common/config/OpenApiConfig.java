@@ -20,7 +20,7 @@ public class OpenApiConfig {
                                 .scheme("bearer").bearerFormat("Installation secret")))
                 .info(new Info()
                         .title("Fuelog API")
-                        .description("C01 차량 연결, C02 차량 홈·수동 기록, C03 사용자 확인, C04 운행 요약과 M06 확인함 API. /connection, /vehicle, /trip-user, /recording-intervals, /sync, /mobile-inbox 경로는 설치별 무작위 Bearer 자격 증명을 사용합니다. 개인 운행 요약·전달에는 X-Trip-User-Candidate도 필요합니다. /trip-user/revoke는 해당 모바일 사용자 JWT도 받습니다. /mobile 경로는 Supabase JWT를 사용합니다. 기존 /pairing-requests 경로는 설치 ID·비밀값 헤더를 사용합니다.")
+                        .description("C01 차량 연결, C02 차량 홈·수동 기록, C03 사용자 확인, C04 운행 요약, C05 주유 후보, C06 정비, C07 연결·설정 및 M06/M07/M14 모바일 API. /connection, /vehicle, /trip-user, /recording-intervals, /sync, /mobile-inbox, /fuel-candidates, /installation 경로는 설치별 무작위 Bearer 자격 증명을 사용합니다. 개인 운행 요약·전달에는 X-Trip-User-Candidate도 필요합니다. /trip-user/revoke는 해당 모바일 사용자 JWT도 받습니다. /mobile 경로는 Supabase JWT를 사용합니다. 기존 /pairing-requests 경로는 설치 ID·비밀값 헤더를 사용합니다.")
                         .version("v1"));
     }
 }

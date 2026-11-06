@@ -73,7 +73,7 @@ public class ConnectionController {
     }
 
     @PostMapping("/connection/reset")
-    @Operation(summary = "C07 차량 연결 초기화", description = "설치 Bearer 자격 증명과 X-User-Authorization: Bearer <Supabase JWT>를 함께 보냅니다. 사용자 JWT의 최근 5분 이내 OTP/TOTP 인증 기록과 해당 차량 OWNER/MANAGER 권한을 확인합니다. 설치 연결을 해제하고 해당 설치 요청을 REVOKED로 바꾸며 운행·주유·정비 기록은 유지합니다.")
+    @Operation(summary = "이전 즉시 초기화 경로 (사용 중단)", description = "최근 OTP 인증 후에도 409 USE_CONNECTION_OPERATIONS를 반환합니다. /connection/disconnect와 모바일 승인 API에서 등록 버전 및 기록 보존 동의를 검증하세요.", deprecated = true)
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "초기화 완료", content = @Content(schema = @Schema(implementation = ConnectionDtos.ResetResult.class), examples = @ExampleObject(value = "{\"installationId\":\"44444444-4444-4444-8444-444444444444\",\"status\":\"RESET\"}"))),
             @ApiResponse(responseCode = "401", description = "설치 또는 사용자 토큰 오류"),
@@ -92,7 +92,8 @@ public class ConnectionController {
         try { jwt = jwtDecoder.decode(userBearer.substring(7)); }
         catch (JwtException ex) { throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_USER_TOKEN"); }
         if (!recentOtp(jwt)) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "RECENT_REAUTH_REQUIRED");
-        return service.reset(bearer, actor.requireUser(jwt), body.vehicleId());
+        actor.requireUser(jwt);
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "USE_CONNECTION_OPERATIONS");
     }
 
     private static boolean recentOtp(Jwt jwt) {

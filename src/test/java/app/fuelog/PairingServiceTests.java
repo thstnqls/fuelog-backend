@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -279,6 +281,15 @@ class PairingServiceTests {
                         .header("X-User-Authorization", "Bearer fresh-user-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"vehicleId\":\"" + vehicle + "\"}"))
+                .andExpect(status().isConflict());
+        // C07 requires an operation with an explicit original-owner retention policy.
+        mvc.perform(post("/connection/disconnect").header("Authorization",bearer)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"kind\":\"VEHICLE\",\"operationId\":\"reset-c07\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("AWAITING_ADMIN"));
+        String installationId=db.queryForObject("SELECT id FROM vehicle_installations WHERE vehicle_id=?",String.class,vehicle.toString());
+        Long registrationVersion=db.queryForObject("SELECT registration_version FROM vehicle_installations WHERE id=?",Long.class,installationId);
+        mvc.perform(post("/mobile/connection-operations/reset-c07/approve").header("Authorization","Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"installationId\":\""+installationId+"\",\"registrationVersion\":"+registrationVersion+",\"pendingRecordsPolicy\":\"RETAIN_ORIGINAL_OWNER\",\"reauthenticationProof\":\"fresh-user-token\"}"))
                 .andExpect(status().isOk());
         assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM vehicle_installations WHERE vehicle_id IS NOT NULL", Integer.class));
         assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));

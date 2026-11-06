@@ -23,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class TripUserCandidateService {
     private static final Duration CONSENT_LIFETIME = Duration.ofMinutes(5);
+    private final InstallationAccess access;
     private final InstallationAuth auth;
     private final PairingActor actor;
     private final PairingRepository pairing;
@@ -30,7 +31,8 @@ public class TripUserCandidateService {
     private final TripUserCandidateRepository repository;
 
     public TripUserCandidateService(InstallationAuth auth, PairingActor actor, PairingRepository pairing,
-                                    VehicleHomeRepository home, TripUserCandidateRepository repository) {
+                                    VehicleHomeRepository home, TripUserCandidateRepository repository, InstallationAccess access) {
+        this.access=access;
         this.auth = auth;
         this.actor = actor;
         this.pairing = pairing;
@@ -86,6 +88,7 @@ public class TripUserCandidateService {
         if (!"recording".equals(interval.status())) fail(HttpStatus.CONFLICT, "INTERVAL_FINISHED");
         if (!"active".equals(candidate.status())) fail(HttpStatus.CONFLICT, "CANDIDATE_ALREADY_USED");
         Instant expiry = candidate.expiresAt();
+        access.verified(installation,candidate.challengeId());
         repository.markVerified(candidate.id(), body.operationId(), expiry, now);
         repository.addEvent(installation, "candidates_changed", now);
         return verified(repository.get(candidate.id(), false));

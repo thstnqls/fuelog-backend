@@ -26,7 +26,7 @@ public class MobileInboxController {
     void noStore(HttpServletResponse response) { response.setHeader("Cache-Control", "no-store"); }
 
     @GetMapping("/mobile/inbox")
-    @Operation(summary = "내 운행 확인함 조회", description = "cursor는 이전 응답 nextCursor(숫자 ID), 최초 0입니다. 최대 50건을 ID 오름차순으로 반환합니다. 현재 로그인한 소유자의 항목만 제공하고 멤버십이 해제되면 숨깁니다. 항목은 전달된 revision의 요약 스냅샷입니다.")
+    @Operation(summary = "내 운행·주유 확인함 조회", description = "cursor는 이전 응답 nextCursor(숫자 ID), 최초 0입니다. 최대 50건을 ID 오름차순으로 반환합니다. 현재 로그인한 소유자의 항목만 제공하고 멤버십이 해제되면 숨깁니다. TRIP_SUMMARY는 전달된 revision의 요약 스냅샷입니다. FUEL_CANDIDATE는 candidateId와 최신 candidateRevision을 제공하며 상세 API로 조회합니다.")
     @ApiResponse(responseCode = "200", description = "확인함 페이지", content = @Content(schema = @Schema(implementation = Inbox.class), examples = @ExampleObject(value = "{\"items\":[],\"nextCursor\":null}")))
     public Inbox inbox(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "0") long cursor) {
         return service.inbox(actor.requireUser(jwt), cursor);

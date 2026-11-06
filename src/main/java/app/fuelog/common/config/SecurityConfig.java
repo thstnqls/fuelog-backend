@@ -24,8 +24,8 @@ public class SecurityConfig {
     @Order(1)
     SecurityFilterChain installationSecurityFilterChain(HttpSecurity http) throws Exception {
         return http.securityMatcher("/connection/**", "/vehicle/**", "/trip-user/**",
-                        "/recording-intervals/**", "/sync/**", "/mobile-inbox/**",
-                        "/maintenance/**", "/vehicle-odometer/**")
+                        "/recording-intervals/**", "/sync/**", "/mobile-inbox/**", "/fuel-candidates/**",
+                        "/maintenance/**", "/vehicle-odometer/**", "/installation/**")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
                 .build();
@@ -44,9 +44,10 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth
                         .authenticationEntryPoint((request, response, exception) -> {
-                            if (request.getRequestURI().startsWith("/mobile/connection/")
+                            if (request.getRequestURI().startsWith("/mobile/connection")
                                     || request.getRequestURI().startsWith("/mobile/trip-user/")
                                     || request.getRequestURI().startsWith("/mobile/inbox")
+                                    || request.getRequestURI().startsWith("/mobile/fuel-candidates")
                                     || request.getRequestURI().startsWith("/mobile/vehicles/")) {
                                 response.setStatus(401);
                                 response.setContentType("application/json");

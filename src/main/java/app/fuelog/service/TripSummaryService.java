@@ -20,6 +20,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class TripSummaryService {
+    private final InstallationAccess access;
     private final InstallationAuth auth;
     private final PairingRepository pairing;
     private final VehicleHomeRepository home;
@@ -30,7 +31,8 @@ public class TripSummaryService {
 
     public TripSummaryService(InstallationAuth auth, PairingRepository pairing, VehicleHomeRepository home,
                               TripUserCandidateRepository candidates, TripSummaryRepository repository,
-                              ObjectMapper json, JdbcTemplate db) {
+                              ObjectMapper json, JdbcTemplate db, InstallationAccess access) {
+        this.access=access;
         this.auth = auth; this.pairing = pairing; this.home = home; this.candidates = candidates;
         this.repository = repository; this.json = json; this.db = db;
     }
@@ -124,7 +126,8 @@ public class TripSummaryService {
         var rows = repository.inbox(user, cursor);
         boolean more = rows.size() > 50;
         var page = rows.stream().limit(50).map(r -> new InboxItem(r.id(), r.trip(), r.revision(),
-                r.deliveredAt(), r.readAt(), json.readValue(r.snapshot(), Summary.class))).toList();
+                r.deliveredAt(), r.readAt(), r.snapshot() == null ? null : json.readValue(r.snapshot(), Summary.class),
+                r.kind(), r.candidateId(), r.candidateRevision())).toList();
         return new Inbox(page, more ? page.getLast().inboxItemId() : null);
     }
 
@@ -142,6 +145,7 @@ public class TripSummaryService {
     private UUID installation(String bearer) {
         UUID id = auth.require(bearer).id();
         pairing.lockInstallation(id);
+        access.requireCollection(id);
         return id;
     }
     private TripSummaryRepository.Trip requireTrip(UUID installation, UUID trip) {

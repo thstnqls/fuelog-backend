@@ -21,11 +21,9 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ConnectionService {
     private final PairingRepository repository;
-    private final VehicleHomeService homeService;
 
-    public ConnectionService(PairingRepository repository, VehicleHomeService homeService) {
+    public ConnectionService(PairingRepository repository) {
         this.repository = repository;
-        this.homeService = homeService;
     }
 
     @Transactional
@@ -113,21 +111,6 @@ public class ConnectionService {
             fail(HttpStatus.CONFLICT, "VEHICLE_ALREADY_LINKED");
         }
         return new ConnectionDtos.Approval(request.id(), body.vehicleId(), "COMPLETED");
-    }
-
-    @Transactional
-    public ConnectionDtos.ResetResult reset(String bearer, UUID user, UUID vehicle) {
-        UUID installation = knownInstallation(credential(bearer));
-        repository.lockInstallation(installation);
-        if (!vehicle.equals(repository.linkedVehicle(installation)))
-            fail(HttpStatus.CONFLICT, "VEHICLE_MISMATCH");
-        if (!repository.userManagesVehicle(user, vehicle))
-            fail(HttpStatus.FORBIDDEN, "VEHICLE_PERMISSION_DENIED");
-        Instant now = Instant.now();
-        homeService.revokeForInstallationReset(installation);
-        repository.revokeForReset(installation, now);
-        repository.unlinkInstallation(installation, now);
-        return new ConnectionDtos.ResetResult(installation, "RESET");
     }
 
     private UUID knownInstallation(byte[] credential) {

@@ -6,6 +6,7 @@ final class TestSchema {
     private TestSchema() {}
 
     static void create(JdbcTemplate db) {
+        ConnectionSettingsTestSchema.drop(db);
         db.execute("DROP TABLE IF EXISTS maintenance_event_audit");
         db.execute("DROP TABLE IF EXISTS maintenance_events");
         db.execute("DROP TABLE IF EXISTS maintenance_plans");
@@ -14,6 +15,9 @@ final class TestSchema {
         db.execute("DROP TABLE IF EXISTS vehicle_maintenance_state");
         db.execute("DROP TABLE IF EXISTS vehicle_odometer_samples");
         db.execute("DROP TABLE IF EXISTS mobile_trip_inbox");
+        db.execute("DROP TABLE IF EXISTS fuel_candidate_operations");
+        db.execute("DROP TABLE IF EXISTS fuel_candidates");
+        db.execute("DROP TABLE IF EXISTS vehicle_fuel_metadata");
         db.execute("DROP TABLE IF EXISTS trip_summaries");
         db.execute("DROP TABLE IF EXISTS recording_samples");
         db.execute("DROP TABLE IF EXISTS recording_batches");
@@ -40,9 +44,13 @@ final class TestSchema {
         db.execute("CREATE TABLE recording_batches (interval_id VARCHAR(36), batch_id VARCHAR(100), payload_hash BINARY(32), accepted_count INT, last_accepted_sequence BIGINT, received_at TIMESTAMP, PRIMARY KEY(interval_id,batch_id))");
         db.execute("CREATE TABLE recording_samples (interval_id VARCHAR(36), sequence BIGINT, batch_id VARCHAR(100), observed_at TIMESTAMP, distance_km DECIMAL(12,3), missing_reason VARCHAR(40), fuel_liters DECIMAL(10,3), fuel_status VARCHAR(20), received_at TIMESTAMP, user_id VARCHAR(36), verified_candidate_id VARCHAR(36), PRIMARY KEY(interval_id,sequence))");
         db.execute("CREATE TABLE trip_summaries (id BIGINT AUTO_INCREMENT PRIMARY KEY, installation_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, vehicle_id VARCHAR(36) NOT NULL, user_id VARCHAR(36), consent_id VARCHAR(36), revision BIGINT NOT NULL, payload_hash BINARY(32) NOT NULL, payload CLOB NOT NULL, synced_at TIMESTAMP NOT NULL, UNIQUE(installation_id,trip_id))");
-        db.execute("CREATE TABLE mobile_trip_inbox (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36) NOT NULL, summary_id BIGINT NOT NULL, trip_revision BIGINT NOT NULL, snapshot CLOB NOT NULL, delivered_at TIMESTAMP NOT NULL, read_at TIMESTAMP, UNIQUE(recipient_id,trip_id))");
+        db.execute("CREATE TABLE mobile_trip_inbox (id BIGINT AUTO_INCREMENT PRIMARY KEY, recipient_id VARCHAR(36) NOT NULL, trip_id VARCHAR(36), summary_id BIGINT, trip_revision BIGINT, snapshot CLOB, delivered_at TIMESTAMP NOT NULL, read_at TIMESTAMP, kind VARCHAR(30) NOT NULL DEFAULT 'TRIP_SUMMARY', candidate_id VARCHAR(36), UNIQUE(recipient_id,trip_id), UNIQUE(recipient_id,kind,candidate_id))");
+        db.execute("CREATE TABLE fuel_candidates (id VARCHAR(36) PRIMARY KEY, installation_id VARCHAR(36) NOT NULL, vehicle_id VARCHAR(36) NOT NULL, owner_id VARCHAR(36) NOT NULL, interval_id VARCHAR(36) NOT NULL, start_at BIGINT NOT NULL, end_at BIGINT NOT NULL, increase_percent DECIMAL(6,3) NOT NULL, status VARCHAR(20) NOT NULL DEFAULT 'CANDIDATE', revision BIGINT NOT NULL DEFAULT 1, capacity_verified BOOLEAN NOT NULL DEFAULT FALSE, estimated_liters DECIMAL(12,3), estimated_amount DECIMAL(15,2), price_at BIGINT, corrected_place VARCHAR(200), corrected_liters DECIMAL(12,3), corrected_amount DECIMAL(15,2), created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL, UNIQUE(installation_id,id))");
+        db.execute("CREATE TABLE vehicle_fuel_metadata (vehicle_id VARCHAR(36) PRIMARY KEY, capacity_liters DECIMAL(10,3), capacity_verified_at TIMESTAMP, capacity_source VARCHAR(200), unit_price DECIMAL(12,3), price_at BIGINT, price_valid_until BIGINT, price_source VARCHAR(200))");
+        db.execute("CREATE TABLE fuel_candidate_operations (candidate_id VARCHAR(36), operation_id VARCHAR(100), actor_id VARCHAR(36) NOT NULL, request_payload CLOB NOT NULL, response_payload CLOB NOT NULL, previous_revision BIGINT NOT NULL, resulting_revision BIGINT NOT NULL, created_at TIMESTAMP NOT NULL, PRIMARY KEY(candidate_id,operation_id))");
         new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
                 new org.springframework.core.io.ClassPathResource("db/migration/V10__maintenance_and_odometer.sql"))
                 .execute(java.util.Objects.requireNonNull(db.getDataSource()));
+        ConnectionSettingsTestSchema.create(db);
     }
 }

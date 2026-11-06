@@ -39,7 +39,7 @@ public final class TripSummaryDtos {
     public record Deliver(@NotBlank @Size(max = 100) String operationId, @NotNull @Positive Long tripRevision) {}
     public record Delivered(long inboxItemId, UUID tripId, Instant deliveredAt) {}
     public record InboxItem(long inboxItemId, UUID tripId, long tripRevision, Instant deliveredAt,
-                            Instant readAt, Summary summary) {}
+                            Instant readAt, Summary summary, String kind, UUID candidateId, Long candidateRevision) {}
     public record Inbox(List<InboxItem> items, Long nextCursor) {}
     public record Read(@NotNull Instant readAt) {}
     public record ReadResult(long inboxItemId, Instant readAt) {}
