@@ -3,7 +3,7 @@ package app.fuelog.entity;
 import java.time.Instant;
 import java.util.UUID;
 
-/** A pairing row. The proof field contains only SHA-256, never the QR secret. */
+/** 연결 요청의 저장 상태. proofHash에는 QR 비밀값 원문 대신 SHA-256만 보관한다. */
 public record PairingRequest(
         UUID id,
         UUID installationId,
@@ -15,8 +15,7 @@ public record PairingRequest(
         UUID approvedUserId,
         String issueKey,
         String intentKey,
-        String confirmationCode
-) {
+        String confirmationCode) {
     public boolean active() {
         return "pending".equals(status) || "awaiting_vehicle_confirmation".equals(status);
     }

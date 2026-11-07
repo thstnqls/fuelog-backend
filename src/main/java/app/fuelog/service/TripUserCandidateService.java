@@ -7,6 +7,13 @@ import app.fuelog.repository.TripUserCandidateRepository.Candidate;
 import app.fuelog.repository.VehicleHomeRepository;
 import app.fuelog.repository.VehicleHomeRepository.Challenge;
 import app.fuelog.repository.VehicleHomeRepository.Interval;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
@@ -14,12 +21,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.UUID;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
+/** 모바일의 구간 동의를 차량 화면에서 확인한 사용자에게만 신규 기록 권한을 준다. */
 @Service
 public class TripUserCandidateService {
     private static final Duration CONSENT_LIFETIME = Duration.ofMinutes(5);
@@ -30,9 +33,14 @@ public class TripUserCandidateService {
     private final VehicleHomeRepository home;
     private final TripUserCandidateRepository repository;
 
-    public TripUserCandidateService(InstallationAuth auth, PairingActor actor, PairingRepository pairing,
-                                    VehicleHomeRepository home, TripUserCandidateRepository repository, InstallationAccess access) {
-        this.access=access;
+    public TripUserCandidateService(
+            InstallationAuth auth,
+            PairingActor actor,
+            PairingRepository pairing,
+            VehicleHomeRepository home,
+            TripUserCandidateRepository repository,
+            InstallationAccess access) {
+        this.access = access;
         this.auth = auth;
         this.actor = actor;
         this.pairing = pairing;
@@ -41,29 +49,35 @@ public class TripUserCandidateService {
     }
 
     @Transactional
-    public TripUserCandidateDtos.Candidates candidates(String bearer, TripUserCandidateDtos.CandidatesRequest body) {
+    public TripUserCandidateDtos.Candidates candidates(
+            String bearer, TripUserCandidateDtos.CandidatesRequest body) {
         UUID installation = auth.require(bearer).id();
         pairing.lockInstallation(installation);
         Interval interval = currentInterval(installation, body.intervalId());
         Instant now = Instant.now();
         expireAndNotify(installation, now);
-        var rows = repository.activeCandidates(installation, interval.vehicleId(), interval.id(), now);
+        var rows =
+                repository.activeCandidates(installation, interval.vehicleId(), interval.id(), now);
         var list = new ArrayList<TripUserCandidateDtos.Candidate>(rows.size());
         for (Candidate candidate : rows) {
             long millis = Duration.between(now, candidate.expiresAt()).toMillis();
             int remaining = (int) Math.max(1, Math.min(300, (millis + 999) / 1000));
-            list.add(new TripUserCandidateDtos.Candidate(candidate.id(), candidate.displayName(), true, true, remaining));
+            list.add(
+                    new TripUserCandidateDtos.Candidate(
+                            candidate.id(), candidate.displayName(), true, true, remaining));
         }
         return new TripUserCandidateDtos.Candidates(interval.id(), list);
     }
 
     @Transactional
-    public TripUserCandidateDtos.Verified verify(String bearer, TripUserCandidateDtos.VerifyRequest body) {
+    public TripUserCandidateDtos.Verified verify(
+            String bearer, TripUserCandidateDtos.VerifyRequest body) {
         UUID installation = auth.require(bearer).id();
         pairing.lockInstallation(installation);
         Candidate priorKey = repository.byVerifyOperation(installation, body.operationId());
-        if (priorKey != null && (!priorKey.id().equals(body.candidateId())
-                || !priorKey.intervalId().equals(body.intervalId())))
+        if (priorKey != null
+                && (!priorKey.id().equals(body.candidateId())
+                        || !priorKey.intervalId().equals(body.intervalId())))
             fail(HttpStatus.CONFLICT, "OPERATION_ID_REUSED");
         Interval interval = home.interval(body.intervalId(), false);
         if (!installation.equals(interval.installationId())
@@ -82,25 +96,29 @@ public class TripUserCandidateService {
         if ("verified".equals(candidate.status())) {
             if (!body.operationId().equals(candidate.verifiedOperationId()))
                 fail(HttpStatus.CONFLICT, "CANDIDATE_ALREADY_USED");
-            if (!now.isBefore(candidate.verificationExpiresAt())) fail(HttpStatus.GONE, "VERIFICATION_EXPIRED");
+            if (!now.isBefore(candidate.verificationExpiresAt()))
+                fail(HttpStatus.GONE, "VERIFICATION_EXPIRED");
             return verified(candidate);
         }
         if (!"recording".equals(interval.status())) fail(HttpStatus.CONFLICT, "INTERVAL_FINISHED");
-        if (!"active".equals(candidate.status())) fail(HttpStatus.CONFLICT, "CANDIDATE_ALREADY_USED");
+        if (!"active".equals(candidate.status()))
+            fail(HttpStatus.CONFLICT, "CANDIDATE_ALREADY_USED");
         Instant expiry = candidate.expiresAt();
-        access.verified(installation,candidate.challengeId());
+        access.verified(installation, candidate.challengeId());
         repository.markVerified(candidate.id(), body.operationId(), expiry, now);
         repository.addEvent(installation, "candidates_changed", now);
         return verified(repository.get(candidate.id(), false));
     }
 
     @Transactional
-    public TripUserCandidateDtos.MobileConsent consent(Jwt jwt, TripUserCandidateDtos.MobileConsentRequest body) {
+    public TripUserCandidateDtos.MobileConsent consent(
+            Jwt jwt, TripUserCandidateDtos.MobileConsentRequest body) {
         UUID user = actor.requireUser(jwt);
         Challenge first = home.challenge(body.challengeId(), false);
         pairing.lockInstallation(first.installationId());
         Challenge challenge = home.challenge(body.challengeId(), true);
-        if (challenge.intervalId() == null || !challenge.installationId().equals(body.installationId())
+        if (challenge.intervalId() == null
+                || !challenge.installationId().equals(body.installationId())
                 || !challenge.vehicleId().equals(body.vehicleId())
                 || !challenge.intervalId().equals(body.intervalId()))
             fail(HttpStatus.FORBIDDEN, "CHALLENGE_SCOPE_MISMATCH");
@@ -110,7 +128,8 @@ public class TripUserCandidateService {
         byte[] fingerprint = InstallationAuth.sha256(proof);
         Candidate existing = repository.byChallenge(challenge.id());
         if (existing != null) {
-            if (!existing.userId().equals(user) || !existing.consentOperationId().equals(body.operationId())
+            if (!existing.userId().equals(user)
+                    || !existing.consentOperationId().equals(body.operationId())
                     || !MessageDigest.isEqual(existing.proofFingerprint(), fingerprint))
                 fail(HttpStatus.CONFLICT, "CONSENT_ALREADY_USED");
             if (!Instant.now().isBefore(existing.expiresAt()))
@@ -120,17 +139,32 @@ public class TripUserCandidateService {
         Interval interval = currentInterval(challenge.installationId(), body.intervalId());
         if (interval.userId() != null && !interval.userId().equals(user))
             fail(HttpStatus.FORBIDDEN, "INTERVAL_OWNER_MISMATCH");
-        Candidate usedOperation = repository.byConsentOperation(challenge.installationId(), body.operationId());
+        Candidate usedOperation =
+                repository.byConsentOperation(challenge.installationId(), body.operationId());
         if (usedOperation != null) fail(HttpStatus.CONFLICT, "OPERATION_ID_REUSED");
         Instant now = Instant.now();
-        if (!"pending".equals(challenge.status())) fail(HttpStatus.CONFLICT, "CHALLENGE_ALREADY_USED");
+        if (!"pending".equals(challenge.status()))
+            fail(HttpStatus.CONFLICT, "CHALLENGE_ALREADY_USED");
         if (!now.isBefore(challenge.expiresAt())) fail(HttpStatus.GONE, "CHALLENGE_EXPIRED");
-        if (challenge.proofHash() == null || !MessageDigest.isEqual(challenge.proofHash(), fingerprint))
+        if (challenge.proofHash() == null
+                || !MessageDigest.isEqual(challenge.proofHash(), fingerprint))
             fail(HttpStatus.FORBIDDEN, "INVALID_CHALLENGE_PROOF");
         UUID id = UUID.randomUUID();
-        Candidate candidate = new Candidate(id, challenge.id(), challenge.installationId(), challenge.vehicleId(),
-                interval.id(), user, VehicleHomeService.displayName(jwt), body.operationId(), fingerprint,
-                null, "active", now.plus(CONSENT_LIFETIME).truncatedTo(ChronoUnit.MICROS), null);
+        Candidate candidate =
+                new Candidate(
+                        id,
+                        challenge.id(),
+                        challenge.installationId(),
+                        challenge.vehicleId(),
+                        interval.id(),
+                        user,
+                        VehicleHomeService.displayName(jwt),
+                        body.operationId(),
+                        fingerprint,
+                        null,
+                        "active",
+                        now.plus(CONSENT_LIFETIME).truncatedTo(ChronoUnit.MICROS),
+                        null);
         repository.insert(candidate, now);
         repository.markChallengeConsented(challenge.id(), user, candidate.displayName(), now);
         repository.addEvent(challenge.installationId(), "candidates_changed", now);
@@ -142,7 +176,8 @@ public class TripUserCandidateService {
         UUID installation = auth.require(bearer).id();
         pairing.lockInstallation(installation);
         Candidate candidate = repository.get(consentId, true);
-        if (!installation.equals(candidate.installationId())) fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
+        if (!installation.equals(candidate.installationId()))
+            fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         return revoke(candidate);
     }
 
@@ -166,14 +201,6 @@ public class TripUserCandidateService {
         var events = repository.events(installation, after, 100);
         long next = events.isEmpty() ? after : events.getLast().revision();
         return new TripUserCandidateDtos.Events(revision, next, events);
-    }
-
-    @Transactional
-    public void revokeForInstallationReset(UUID installation) {
-        pairing.lockInstallation(installation);
-        Instant now = Instant.now();
-        if (repository.revokeForInstallation(installation, now) > 0)
-            repository.addEvent(installation, "candidates_changed", now);
     }
 
     private TripUserCandidateDtos.Revoked revoke(Candidate candidate) {
@@ -207,24 +234,39 @@ public class TripUserCandidateService {
     }
 
     private static TripUserCandidateDtos.Verified verified(Candidate candidate) {
-        return new TripUserCandidateDtos.Verified(candidate.intervalId(), candidate.id(), candidate.userId(),
-                true, true, candidate.verificationExpiresAt().toEpochMilli());
+        return new TripUserCandidateDtos.Verified(
+                candidate.intervalId(),
+                candidate.id(),
+                candidate.userId(),
+                true,
+                true,
+                candidate.verificationExpiresAt().toEpochMilli());
     }
 
     private static TripUserCandidateDtos.MobileConsent consentView(Candidate candidate) {
-        return new TripUserCandidateDtos.MobileConsent(candidate.id(), candidate.id(), candidate.intervalId(),
-                candidate.status().toUpperCase(), candidate.expiresAt());
+        return new TripUserCandidateDtos.MobileConsent(
+                candidate.id(),
+                candidate.id(),
+                candidate.intervalId(),
+                candidate.status().toUpperCase(),
+                candidate.expiresAt());
     }
 
     private static byte[] decodeProof(String encoded) {
         if (encoded == null || !encoded.matches("[A-Za-z0-9_-]{43}"))
             fail(HttpStatus.FORBIDDEN, "INVALID_CHALLENGE_PROOF");
         byte[] proof;
-        try { proof = Base64.getUrlDecoder().decode(encoded); }
-        catch (IllegalArgumentException ex) { fail(HttpStatus.FORBIDDEN, "INVALID_CHALLENGE_PROOF"); return null; }
+        try {
+            proof = Base64.getUrlDecoder().decode(encoded);
+        } catch (IllegalArgumentException ex) {
+            fail(HttpStatus.FORBIDDEN, "INVALID_CHALLENGE_PROOF");
+            return null;
+        }
         if (proof.length != 32) fail(HttpStatus.FORBIDDEN, "INVALID_CHALLENGE_PROOF");
         return proof;
     }
 
-    private static void fail(HttpStatus status, String code) { throw new ResponseStatusException(status, code); }
+    private static void fail(HttpStatus status, String code) {
+        throw new ResponseStatusException(status, code);
+    }
 }

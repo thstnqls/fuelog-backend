@@ -1,23 +1,28 @@
 package app.fuelog.service;
 
+import static app.fuelog.service.InstallationAuth.sha256;
+
 import app.fuelog.dto.ConnectionDtos;
 import app.fuelog.entity.PairingRequest;
 import app.fuelog.repository.PairingRepository;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Base64;
-import java.util.UUID;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Base64;
+import java.util.UUID;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+
+/** 설치 Bearer로 QR을 발급하고 모바일 관리자 승인으로 기존 차량을 연결한다. */
 @Service
 public class ConnectionService {
     private final PairingRepository repository;
@@ -49,8 +54,10 @@ public class ConnectionService {
         }
         if (suppliedRequest != null) {
             PairingRequest previous = repository.get(suppliedRequest, false);
-            if (!installation.equals(previous.installationId())) fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
+            if (!installation.equals(previous.installationId()))
+                fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         }
+        //재발급 시 pending 상태의 코드를 비활성화 시킨다.
         repository.expireForInstallation(installation, now);
         repository.revokeActive(installation, now);
         UUID id = UUID.randomUUID();
@@ -61,9 +68,11 @@ public class ConnectionService {
 
     @Transactional
     public ConnectionDtos.Response status(String bearer, ConnectionDtos.StatusBody body) {
-        UUID installation = knownInstallation(credential(bearer));
+        byte[] credential = credential(bearer);
+        UUID installation = knownInstallation(credential);
         PairingRequest request = repository.get(parseRequestId(body.requestId()), true);
-        if (!installation.equals(request.installationId())) fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
+        if (!installation.equals(request.installationId()))
+            fail(HttpStatus.FORBIDDEN, "INSTALLATION_MISMATCH");
         if (!body.operationId().equals(request.issueKey()))
             fail(HttpStatus.CONFLICT, "OPERATION_ID_MISMATCH");
         Instant now = Instant.now();
@@ -71,7 +80,7 @@ public class ConnectionService {
             repository.expireOne(request.id(), now);
             request = repository.get(request.id(), false);
         }
-        return response(request, credential(bearer), now);
+        return response(request, credential, now);
     }
 
     @Transactional(readOnly = true)
@@ -81,7 +90,8 @@ public class ConnectionService {
         PairingRequest request = repository.get(envelope.requestId(), false);
         requireWaiting(request);
         requireNonce(request, envelope.nonce());
-        return new ConnectionDtos.Inspection(request.id(), remaining(request.expiresAt(), Instant.now()));
+        return new ConnectionDtos.Inspection(
+                request.id(), remaining(request.expiresAt(), Instant.now()));
     }
 
     @Transactional
@@ -90,8 +100,10 @@ public class ConnectionService {
         repository.lockInstallation(initial.installationId());
         PairingRequest request = repository.get(body.requestId(), true);
         String key = body.idempotencyKey();
-        if ("completed".equals(request.status()) && user.equals(request.approvedUserId())
-                && body.vehicleId().equals(request.selectedVehicleId()) && key.equals(request.intentKey())) {
+        if ("completed".equals(request.status())
+                && user.equals(request.approvedUserId())
+                && body.vehicleId().equals(request.selectedVehicleId())
+                && key.equals(request.intentKey())) {
             if (!body.vehicleId().equals(repository.linkedVehicle(request.installationId())))
                 fail(HttpStatus.CONFLICT, "CONNECTION_RESET");
             return new ConnectionDtos.Approval(request.id(), body.vehicleId(), "COMPLETED");
@@ -124,24 +136,34 @@ public class ConnectionService {
     }
 
     private static UUID parseRequestId(String value) {
-        try { return UUID.fromString(value); }
-        catch (IllegalArgumentException ex) { fail(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_ID"); return null; }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException ex) {
+            fail(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_ID");
+            return null;
+        }
     }
 
-    private static ConnectionDtos.Response response(PairingRequest request, byte[] credential, Instant now) {
+    private static ConnectionDtos.Response response(
+            PairingRequest request, byte[] credential, Instant now) {
         if ("pending".equals(request.status()) && now.isBefore(request.expiresAt())) {
             byte[] nonce = nonce(credential, request.id());
-            if (request.proofHash() == null || !MessageDigest.isEqual(request.proofHash(), sha256(nonce)))
+            if (request.proofHash() == null
+                    || !MessageDigest.isEqual(request.proofHash(), sha256(nonce)))
                 fail(HttpStatus.CONFLICT, "REQUEST_NOT_RECOVERABLE");
-            return new ConnectionDtos.Response(request.id(), "WAITING",
-                    remaining(request.expiresAt(), now), Base64.getUrlEncoder().withoutPadding().encodeToString(nonce));
+            return new ConnectionDtos.Response(
+                    request.id(),
+                    "WAITING",
+                    remaining(request.expiresAt(), now),
+                    Base64.getUrlEncoder().withoutPadding().encodeToString(nonce));
         }
-        String state = switch (request.status()) {
-            case "completed" -> "COMPLETED";
-            case "revoked" -> "REVOKED";
-            case "pending", "awaiting_vehicle_confirmation", "expired" -> "EXPIRED";
-            default -> throw new IllegalStateException("Unknown pairing status");
-        };
+        String state =
+                switch (request.status()) {
+                    case "completed" -> "COMPLETED";
+                    case "revoked" -> "REVOKED";
+                    case "pending", "awaiting_vehicle_confirmation", "expired" -> "EXPIRED";
+                    default -> throw new IllegalStateException("Unknown pairing status");
+                };
         return new ConnectionDtos.Response(request.id(), state, null, null);
     }
 
@@ -161,15 +183,21 @@ public class ConnectionService {
         if (encoded == null || !encoded.matches("[A-Za-z0-9_-]{43}"))
             fail(HttpStatus.FORBIDDEN, "INVALID_NONCE");
         byte[] supplied;
-        try { supplied = Base64.getUrlDecoder().decode(encoded); }
-        catch (IllegalArgumentException ex) { fail(HttpStatus.FORBIDDEN, "INVALID_NONCE"); return; }
+        try {
+            supplied = Base64.getUrlDecoder().decode(encoded);
+        } catch (IllegalArgumentException ex) {
+            fail(HttpStatus.FORBIDDEN, "INVALID_NONCE");
+            return;
+        }
         if (supplied.length != 32) fail(HttpStatus.FORBIDDEN, "INVALID_NONCE");
-        if (request.proofHash() == null || !MessageDigest.isEqual(request.proofHash(), sha256(supplied)))
+        if (request.proofHash() == null
+                || !MessageDigest.isEqual(request.proofHash(), sha256(supplied)))
             fail(HttpStatus.FORBIDDEN, "INVALID_NONCE");
     }
 
     private static byte[] credential(String bearer) {
-        if (bearer == null || !bearer.startsWith("Bearer ")) fail(HttpStatus.UNAUTHORIZED, "INVALID_INSTALLATION_CREDENTIAL");
+        if (bearer == null || !bearer.startsWith("Bearer "))
+            fail(HttpStatus.UNAUTHORIZED, "INVALID_INSTALLATION_CREDENTIAL");
         byte[] value = decode(bearer.substring(7));
         if (value.length < 32) fail(HttpStatus.UNAUTHORIZED, "INVALID_INSTALLATION_CREDENTIAL");
         return value;
@@ -178,22 +206,26 @@ public class ConnectionService {
     private static byte[] decode(String encoded) {
         if (encoded == null || !encoded.matches("[A-Za-z0-9_-]{43,}"))
             fail(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIAL_FORMAT");
-        try { return Base64.getUrlDecoder().decode(encoded); }
-        catch (IllegalArgumentException ex) { fail(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIAL_FORMAT"); return null; }
+        try {
+            return Base64.getUrlDecoder().decode(encoded);
+        } catch (IllegalArgumentException ex) {
+            fail(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIAL_FORMAT");
+            return null;
+        }
     }
 
     private static byte[] nonce(byte[] credential, UUID request) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(credential, "HmacSHA256"));
-            return mac.doFinal(("fuelog.connection.v1:" + request).getBytes(StandardCharsets.US_ASCII));
-        } catch (Exception ex) { throw new IllegalStateException(ex); }
+            return mac.doFinal(
+                    ("fuelog.connection.v1:" + request).getBytes(StandardCharsets.US_ASCII));
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
-    private static byte[] sha256(byte[] value) {
-        try { return MessageDigest.getInstance("SHA-256").digest(value); }
-        catch (NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
+    private static void fail(HttpStatus status, String code) {
+        throw new ResponseStatusException(status, code);
     }
-
-    private static void fail(HttpStatus status, String code) { throw new ResponseStatusException(status, code); }
 }

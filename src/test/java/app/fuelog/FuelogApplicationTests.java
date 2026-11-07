@@ -48,6 +48,31 @@ class FuelogApplicationTests {
     }
 
     @Test
+    void openApiSeparatesDeviceAuthenticationAndModelsAndDeprecatesReset() throws Exception {
+        var doc = JsonPath.parse(mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        // 같은 이름의 Java record가 서로 다른 응답 구조를 덮어쓰지 않아야 한다.
+        Map<String, Object> trip = doc.read("$.components.schemas.TripSummarySummary.properties");
+        Map<String, Object> maintenance = doc.read("$.components.schemas.MaintenanceSummary.properties");
+        assertTrue(trip.containsKey("fuelEfficiencyKmPerLiter"));
+        assertFalse(trip.containsKey("odometer"));
+        assertTrue(maintenance.containsKey("odometer"));
+        assertFalse(maintenance.containsKey("fuelEfficiencyKmPerLiter"));
+
+        for (var path : List.of("/connection/requests", "/vehicle/home",
+                "/trip-user/candidates", "/recording-intervals/{tripId}/summary")) {
+            String method = path.endsWith("requests") || path.endsWith("candidates") ? "post" : "get";
+            List<Map<String, Object>> security = doc.read("$['paths']['" + path + "']['" + method + "']['security']");
+            assertTrue(security.stream().anyMatch(s -> s.containsKey("installationBearer")), path);
+        }
+        Map<String, Object> reset = doc.read("$['paths']['/connection/reset']['post']");
+        assertTrue(Boolean.TRUE.equals(reset.get("deprecated")));
+        Map<String, Object> responses = doc.read("$['paths']['/connection/reset']['post']['responses']");
+        assertFalse(responses.containsKey("200"));
+        assertTrue(responses.containsKey("409"));
+    }
+
+    @Test
     void pairingOpenApiExplainsEveryOperationAndShowsInputsAndOutputs() throws Exception {
         String json = mockMvc.perform(get("/v3/api-docs"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
@@ -83,7 +108,7 @@ class FuelogApplicationTests {
         assertTrue(issueParameters.stream().anyMatch(p -> "X-Installation-Secret".equals(p.get("name"))
                 && Boolean.TRUE.equals(p.get("required"))));
         assertTrue(issueParameters.stream().anyMatch(p -> "Idempotency-Key".equals(p.get("name"))));
-        Map<String, Object> proof = doc.read("$['components']['schemas']['QrPayload']['properties']['proof']");
+        Map<String, Object> proof = doc.read("$['components']['schemas']['PairingQrPayload']['properties']['proof']");
         assertFalse(((String) proof.get("description")).isBlank());
         assertTrue(proof.containsKey("example"));
         List<Map<String, Object>> meSecurity = doc.read("$['paths']['/auth/me']['get']['security']");
