@@ -81,33 +81,33 @@ public class InstallationAccess {
                 installation.toString());
     }
 
-    public UUID currentUser(UUID installation) {
+    public record AuthenticatedUser(UUID subjectId, String displayName) {}
+
+    public AuthenticatedUser authenticatedUser(UUID installation) {
         if (blocked(installation)) return null;
-        var users =
-                db.query(
-                        "SELECT s.user_id FROM trip_user_sessions s JOIN vehicle_installations i ON"
-                                + " i.id=s.installation_id JOIN group_members m ON"
-                                + " m.vehicle_id=s.vehicle_id AND m.user_id=s.user_id WHERE"
-                                + " s.installation_id=? AND s.vehicle_id=i.vehicle_id AND"
-                                + " s.status='active' AND s.version=i.session_version AND"
-                                + " s.expires_at>?",
-                        (r, n) -> UUID.fromString(r.getString(1)),
-                        installation.toString(),
-                        LocalDateTime.now(ZoneOffset.UTC));
-        if (!users.isEmpty()) return users.getFirst();
-        var grants =
-                db.query(
-                        "SELECT c.user_id FROM trip_user_candidates c JOIN vehicle_installations i"
-                            + " ON i.id=c.installation_id JOIN group_members m ON"
-                            + " m.vehicle_id=c.vehicle_id AND m.user_id=c.user_id WHERE"
-                            + " c.installation_id=? AND c.vehicle_id=i.vehicle_id AND"
-                            + " c.status='verified' AND c.verification_expires_at>? AND"
-                            + " c.verified_operation_id IS NOT NULL ORDER BY c.updated_at DESC,c.id"
-                            + " DESC LIMIT 1",
-                        (r, n) -> UUID.fromString(r.getString(1)),
-                        installation.toString(),
-                        LocalDateTime.now(ZoneOffset.UTC));
-        return grants.isEmpty() ? null : grants.getFirst();
+        // Only successful QR approvals for the installation's current vehicle can supply an owner.
+        var users = db.query("""
+                SELECT latest.user_id, latest.display_name FROM (
+                SELECT q.user_id, q.display_name, q.vehicle_id FROM (
+                    SELECT p.approved_user_id AS user_id, 'QR 인증 사용자' AS display_name,
+                           p.updated_at AS authenticated_at, p.selected_vehicle_id AS vehicle_id
+                    FROM pairing_requests p WHERE p.installation_id=? AND p.status='completed'
+                    UNION ALL
+                    SELECT c.approved_user_id AS user_id, c.display_name,
+                           c.updated_at AS authenticated_at, c.vehicle_id
+                    FROM trip_user_challenges c WHERE c.installation_id=?
+                        AND c.status IN ('approved','consented')
+                ) q JOIN vehicle_installations i ON i.id=? AND i.vehicle_id=q.vehicle_id
+                ORDER BY q.authenticated_at DESC LIMIT 1
+                ) latest JOIN group_members m ON m.vehicle_id=latest.vehicle_id AND m.user_id=latest.user_id
+                """, (row, n) -> new AuthenticatedUser(UUID.fromString(row.getString(1)),
+                        row.getString(2)), installation.toString(), installation.toString(), installation.toString());
+        return users.isEmpty() ? null : users.getFirst();
+    }
+
+    public UUID currentUser(UUID installation) {
+        var user = authenticatedUser(installation);
+        return user == null ? null : user.subjectId();
     }
 
     private static void fail(String code) {

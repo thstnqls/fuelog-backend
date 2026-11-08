@@ -240,13 +240,18 @@ public class PairingRepository {
 
     public boolean linkInstallation(UUID installation, UUID vehicle, Instant now) {
         return db.update(
-                        "UPDATE vehicle_installations SET vehicle_id=?,"
+                        "UPDATE vehicle_installations SET vehicle_id=?,personal_access_blocked=FALSE,access_blocked_at=NULL,"
                                 + " registration_version=registration_version+1, updated_at=? WHERE"
                                 + " id=? AND vehicle_id IS NULL",
                         vehicle.toString(),
                         time(now),
                         installation.toString())
                 == 1;
+    }
+
+    public void resumeInstallation(UUID installation, Instant now) {
+        db.update("UPDATE vehicle_installations SET personal_access_blocked=FALSE,access_blocked_at=NULL,updated_at=? WHERE id=?",
+                time(now), installation.toString());
     }
 
     public void complete(UUID request, UUID vehicle, Instant now) {

@@ -137,6 +137,10 @@ public class ConnectionSettingsService {
                 b.kind() == Kind.USER ? now() : null);
         // 관리자 승인 대기 중에도 개인 권한은 즉시 폐기한다. 설치 잠금으로 사용자 확인·기록 시작과 직렬화한다.
         revokeAndPreserve(installation);
+        if (b.kind() == Kind.USER) {
+            pairing.revokeForReset(installation, Instant.now());
+            // Retain the physical vehicle so shared maintenance remains readable without a user.
+        }
         return new OperationResult(b.operationId(), state);
     }
 

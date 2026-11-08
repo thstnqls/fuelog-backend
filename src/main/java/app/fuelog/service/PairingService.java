@@ -23,9 +23,11 @@ import java.util.UUID;
 public class PairingService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private final PairingRepository repository;
+    private final InstallationAccess access;
 
-    public PairingService(PairingRepository repository) {
+    public PairingService(PairingRepository repository, InstallationAccess access) {
         this.repository = repository;
+        this.access = access;
     }
 
     @Transactional
@@ -43,7 +45,7 @@ public class PairingService {
         validKey(key);
         Instant now = Instant.now();
         repository.lockInstallation(installation);
-        if (repository.linkedVehicle(installation) != null) conflict("Installation already paired");
+        if (access.currentUser(installation) != null) conflict("Installation already paired");
         if (repository.issueKeyExists(installation, key))
             conflict("Idempotency-Key already used; keep the original QR response");
         repository.expireForInstallation(installation, now);
@@ -125,7 +127,10 @@ public class PairingService {
                         confirmationCode.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
                         request.confirmationCode()
                                 .getBytes(java.nio.charset.StandardCharsets.US_ASCII))) forbidden();
-        if (repository.linkedVehicle(installation) != null) conflict("Installation already paired");
+        UUID knownVehicle = repository.linkedVehicle(installation);
+        if (knownVehicle != null && !knownVehicle.equals(request.selectedVehicleId()))
+            conflict("Existing vehicle must be selected; reset registration to change vehicles");
+        if (access.currentUser(installation) != null) conflict("Installation already paired");
 
         UUID vehicle = request.selectedVehicleId();
         Instant now = Instant.now();
@@ -138,8 +143,9 @@ public class PairingService {
             repository.createVehicle(
                     vehicle, id, request.approvedUserId(), request.newVehicleName(), now);
         }
-        if (!repository.linkInstallation(installation, vehicle, now))
-            conflict("Installation already paired");
+        if (knownVehicle == null) {
+            if (!repository.linkInstallation(installation, vehicle, now)) conflict("Installation already paired");
+        } else repository.resumeInstallation(installation, now);
         repository.complete(id, vehicle, now);
         return view(repository.get(id, false));
     }
@@ -169,7 +175,10 @@ public class PairingService {
     @Transactional(readOnly = true)
     public PairingDtos.Installation installation(UUID installation) {
         UUID vehicle = repository.linkedVehicle(installation);
-        return new PairingDtos.Installation(installation, vehicle, vehicle != null);
+        var user = access.authenticatedUser(installation);
+        return new PairingDtos.Installation(installation, vehicle, user != null,
+                user == null ? null : user.subjectId(), user == null ? null : user.displayName(),
+                vehicle == null ? null : repository.vehicleName(vehicle));
     }
 
     private void requireManager(UUID user, UUID vehicle) {

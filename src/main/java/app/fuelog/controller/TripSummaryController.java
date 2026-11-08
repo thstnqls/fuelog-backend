@@ -44,8 +44,7 @@ public class TripSummaryController {
             description =
                     "장치의 설치 Bearer로 호출합니다. 경로와 본문의 tripId는 같아야 하며, revision은 1부터 증가시키세요. 같은"
                         + " revision·같은 본문 재시도는 같은 syncedAt을 반환하고 낮은 revision이나 본문 충돌은 409입니다.\n\n"
-                        + "userConsentId에는 같은 구간에서 확인한 candidateId를 넣습니다. null이면 익명이며 모바일 확인함 전송이"
-                        + " 불가합니다. 기존 소유자와 운행 시작·종료 시각은 변경할 수 없습니다. 연료·단가를 모르면 값은 null, 유효 여부는"
+                        + "새 클라이언트는 userConsentId=null로 보내며 서버가 시작 때 고정한 구간 소유자를 사용합니다. 기존 candidateId 구간도 유지합니다. 기존 소유자와 운행 시작·종료 시각은 변경할 수 없습니다. 연료·단가를 모르면 값은 null, 유효 여부는"
                         + " false로 보내세요.")
     @ApiResponse(
             responseCode = "200",
@@ -84,7 +83,7 @@ public class TripSummaryController {
             summary = "저장된 운행 요약 조회",
             description =
                     "장치의 설치 Bearer로 거리, 연료 소모량, 연비, 추정 비용을 조회합니다. 사용자 귀속 운행은 X-Trip-User-Candidate에"
-                        + " 저장 당시 userConsentId와 같은 candidateId가 필요합니다.\n\n"
+                        + " 기존 동의 구간은 저장 당시 candidateId가 필요하고, 페어링 사용자 구간은 현재 인증된 사용자와 소유자가 일치해야 합니다.\n\n"
                         + "계산할 수 없는 항목은 value=null, status=unavailable과 reason을 반환합니다. 조회만 수행하며 운행을"
                         + " 새로 만들지 않습니다.")
     @ApiResponse(

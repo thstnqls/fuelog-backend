@@ -206,6 +206,7 @@ public class VehicleHomeService {
         requireSession(installation.id(), scopedBearer);
         Instant now = Instant.now();
         repository.revokeActiveSessions(installation.id(), now);
+        access.block(installation.id());
         long version = repository.incrementSessionVersion(installation.id());
         return new VehicleHomeDtos.SessionDeleted(version, "REVOKED");
     }
@@ -216,29 +217,30 @@ public class VehicleHomeService {
         Instant now = Instant.now();
         Session session =
                 scopedBearer == null ? null : requireSession(installation.id(), scopedBearer);
+        UUID user = session == null ? access.currentUser(installation.id()) : session.userId();
         UUID vehicleId = linkedVehicle(installation.id());
         var vehicle = repository.vehicle(vehicleId);
         Interval latest =
                 repository.latestIntervalForUser(
-                        installation.id(), vehicleId, session == null ? null : session.userId());
+                        installation.id(), vehicleId, user);
         String recordingStatus = latest == null ? "unknown" : latest.status();
         Instant lastSampleAt = latest == null ? null : latest.lastSampleAt();
         var recordingState = state(lastSampleAt, now);
         var syncState = state(latest == null ? null : latest.lastSyncedAt(), now);
         VehicleHomeDtos.DataStatus privateUnavailable =
                 new VehicleHomeDtos.DataStatus(
-                        session == null ? "needs_user_proof" : "unsupported", null);
+                        user == null ? "needs_user_proof" : "unsupported", null);
         BigDecimal distance = null;
         VehicleHomeDtos.DataStatus distanceState = privateUnavailable;
         VehicleHomeDtos.DataStatus fuelState = privateUnavailable;
         VehicleHomeDtos.DataStatus costState = privateUnavailable;
-        if (session != null) {
-            var observed = repository.distanceForUser(vehicleId, session.userId());
+        if (user != null) {
+            var observed = repository.distanceForUser(vehicleId, user);
             if (observed.km() != null) {
                 distance = observed.km();
                 distanceState = state(observed.observedAt(), now);
             }
-            var fuel = repository.latestFuelForUser(vehicleId, session.userId());
+            var fuel = repository.latestFuelForUser(vehicleId, user);
             if (fuel != null) {
                 fuelState =
                         switch (fuel.status()) {
@@ -283,6 +285,8 @@ public class VehicleHomeService {
                 scopedBearer == null ? null : requireSession(installation.id(), scopedBearer);
         Interval existing = repository.intervalByLocalId(installation.id(), body.localIntervalId());
         if (existing != null) {
+            if (body.subjectId() != null && !body.subjectId().equals(existing.userId()))
+                fail(HttpStatus.CONFLICT, "INTERVAL_OWNER_MISMATCH");
             if (!vehicle.equals(existing.vehicleId())
                     || !"manual_app".equals(body.source())
                     || !existing.startedAt().equals(dbTime(body.startedAt())))
@@ -291,12 +295,18 @@ public class VehicleHomeService {
         }
         if (!"manual_app".equals(body.source()))
             fail(HttpStatus.BAD_REQUEST, "INVALID_RECORDING_SOURCE");
+        UUID owner = session == null ? null : session.userId();
+        if (body.subjectId() != null) {
+            if (!body.subjectId().equals(access.currentUser(installation.id())))
+                fail(HttpStatus.FORBIDDEN, "AUTHENTICATED_USER_CHANGED");
+            owner = body.subjectId();
+        }
         UUID id = UUID.randomUUID();
         repository.createInterval(
                 id,
                 installation.id(),
                 vehicle,
-                session == null ? null : session.userId(),
+                owner,
                 session == null ? null : session.version(),
                 body.localIntervalId(),
                 dbTime(body.startedAt()),

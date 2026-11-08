@@ -82,29 +82,30 @@ class ConnectionSettingsTests {
         db.update("UPDATE vehicle_installations SET registration_version=2");
         assertEquals(Feature.UNKNOWN,settings().features().distance());
     }
-    @Test void userDisconnectRevokesAndPreservesOwnersAndRetryCannotDisconnectNewLogin() {
+    @Test void userDisconnectUnlinksAndPreservesOwnersAndRetryCannotDisconnectNewPairing() {
         var result=service.disconnect(bearer,new Disconnect(Kind.USER,"logout"));
         assertEquals("COMPLETED",result.status());assertTrue(access.blocked(installation));
         assertEquals(vehicle.toString(),db.queryForObject("SELECT vehicle_id FROM vehicle_installations",String.class));
         assertEquals(user.toString(),db.queryForObject("SELECT user_id FROM recording_intervals WHERE id=?",String.class,interval.toString()));
         assertEquals("finished",db.queryForObject("SELECT status FROM recording_intervals WHERE id=?",String.class,interval.toString()));
         assertStatus(401,()->home.home(bearer,scoped));
-        scoped=login(other);
+        rePair(other);
         assertFalse(access.blocked(installation));
         assertEquals(result,service.disconnect(bearer,new Disconnect(Kind.USER,"logout")));
-        home.home(bearer,scoped);
+        home.home(bearer,null);
         assertEquals(other,access.currentUser(installation));
         assertEquals(user.toString(),db.queryForObject("SELECT user_id FROM connection_operations WHERE operation_id='logout'",String.class));
         assertStatus(409,()->service.disconnect(bearer,new Disconnect(Kind.VEHICLE,"logout")));
         assertEquals(1,count("connection_operations"));
     }
-    @Test void newC03ProofUnlocksButOldConsentAndSamplesStayRevoked() {
+    @Test void userDisconnectRequiresNewPairingAndKeepsOriginalOwner() {
         service.disconnect(bearer,new Disconnect(Kind.USER,"logout"));
-        UUID prepared=home.start(bearer,null,new VehicleHomeDtos.IntervalStartRequest("new-trip",Instant.now(),"manual_app")).id();
-        var challenge=home.challenge(bearer,new VehicleHomeDtos.ChallengeRequest(null,"new-consent",prepared));
-        var candidate=consents.consent(jwt(other),new TripUserCandidateDtos.MobileConsentRequest(vehicle,installation,prepared,challenge.challengeId(),challenge.proof(),"new-consent")).candidateId();
-        consents.verify(bearer,new TripUserCandidateDtos.VerifyRequest(prepared,candidate,"new-verify"));
+        assertStatus(403,()->home.start(bearer,null,new VehicleHomeDtos.IntervalStartRequest("new-trip",Instant.now(),"manual_app",other)));
+        assertNull(pairing.installation(installation).authenticated_user_id());
+        rePair(other);
         assertFalse(access.blocked(installation));assertEquals(other,access.currentUser(installation));
+        UUID prepared=home.start(bearer,null,new VehicleHomeDtos.IntervalStartRequest("new-trip",Instant.now(),"manual_app",other)).id();
+        assertEquals(other.toString(),db.queryForObject("SELECT user_id FROM recording_intervals WHERE id=?",String.class,prepared.toString()));
         assertEquals(user.toString(),db.queryForObject("SELECT user_id FROM recording_intervals WHERE id=?",String.class,interval.toString()));
     }
     @Test void vehicleResetRequiresManagerProofVersionAndRetentionPolicyThenKeepsCredentialForC01() {
@@ -172,7 +173,7 @@ class ConnectionSettingsTests {
         service.setRecommendation(user,vehicle,new Recommendation(true,true));
         service.disconnect(bearer,new Disconnect(Kind.USER,"logout"));
         assertFalse(settings().recommendationEnabled());assertFalse(settings().recommendationConsented());
-        login(other);assertFalse(settings().recommendationConsented());
+        rePair(other);assertFalse(settings().recommendationConsented());
     }
     @Test void syncNeverInfersLocalCompletionAndDoesNotLeakOtherOwners() {
         assertEquals("UNKNOWN",service.syncStatus(bearer).status());
@@ -206,6 +207,12 @@ class ConnectionSettingsTests {
                 .content(json.writeValueAsString(new Approve(installation,registration,"DELETE","proof")))).andExpect(status().isBadRequest());
         mvc.perform(post("/mobile/connection-operations/reset/approve").header("Authorization","Bearer owner").contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(approval("proof",registration)))).andExpect(status().isOk()).andExpect(jsonPath("$.status").value("COMPLETED"));
+    }
+    private void rePair(UUID owner) {
+        db.update("UPDATE group_members SET role='MANAGER' WHERE vehicle_id=? AND user_id=?",vehicle.toString(),owner.toString());
+        var request=pairing.issue(installation,"re-pair-"+UUID.randomUUID());
+        var intent=pairing.intent(owner,request.id(),"intent-"+UUID.randomUUID(),new app.fuelog.dto.PairingDtos.IntentRequest(request.qr().proof(),vehicle,null));
+        vehicle=pairing.confirm(installation,request.id(),intent.confirmation_code()).vehicle_id();
     }
     private String login(UUID owner) {
         var challenge=home.challenge(bearer,new VehicleHomeDtos.ChallengeRequest(installation,"login-"+UUID.randomUUID(),null));

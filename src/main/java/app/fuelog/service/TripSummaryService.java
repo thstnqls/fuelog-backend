@@ -116,8 +116,12 @@ public class TripSummaryService {
                             user.toString());
             if (incompatible != null && incompatible > 0)
                 fail(HttpStatus.FORBIDDEN, "INTERVAL_OWNER_BOUNDARY");
-        } else if (interval != null && interval.userId() != null)
-            fail(HttpStatus.FORBIDDEN, "USER_PROOF_REQUIRED");
+        } else if (interval != null && interval.userId() != null) {
+            // The server-fixed interval owner also covers records queued before a later user switch.
+            user = interval.userId();
+            if (!candidates.memberForUpdate(user, vehicle))
+                fail(HttpStatus.FORBIDDEN, "VEHICLE_MEMBERSHIP_REQUIRED");
+        }
 
         var previous = repository.trip(installation, tripId);
         String payload = json.writeValueAsString(body);
@@ -249,6 +253,11 @@ public class TripSummaryService {
         if (row.user() == null) return;
         if (!Objects.equals(row.consent(), consent))
             fail(HttpStatus.FORBIDDEN, "USER_PROOF_REQUIRED");
+        if (consent == null) {
+            if (!row.user().equals(access.currentUser(row.installation())))
+                fail(HttpStatus.FORBIDDEN, "AUTHENTICATED_USER_CHANGED");
+            return;
+        }
         var candidate = candidates.get(consent, true);
         proof(
                 consent,

@@ -50,7 +50,8 @@ public class ConnectionService {
         }
         if (repository.linkedVehicle(installation) != null) {
             PairingRequest latest = repository.current(installation);
-            return new ConnectionDtos.Response(latest.id(), "ALREADY_LINKED", null, null);
+            if ("completed".equals(latest.status()))
+                return new ConnectionDtos.Response(latest.id(), "ALREADY_LINKED", null, null);
         }
         if (suppliedRequest != null) {
             PairingRequest previous = repository.get(suppliedRequest, false);
@@ -112,12 +113,15 @@ public class ConnectionService {
         requireNonce(request, body.nonce());
         if (!repository.userManagesVehicle(user, body.vehicleId()))
             fail(HttpStatus.FORBIDDEN, "VEHICLE_PERMISSION_DENIED");
-        if (repository.linkedVehicle(request.installationId()) != null)
-            fail(HttpStatus.CONFLICT, "ALREADY_LINKED");
+        UUID knownVehicle = repository.linkedVehicle(request.installationId());
+        if (knownVehicle != null && !knownVehicle.equals(body.vehicleId()))
+            fail(HttpStatus.CONFLICT, "VEHICLE_REGISTRATION_MISMATCH");
         Instant now = Instant.now();
         try {
-            if (!repository.linkInstallation(request.installationId(), body.vehicleId(), now))
-                fail(HttpStatus.CONFLICT, "ALREADY_LINKED");
+            if (knownVehicle == null) {
+                if (!repository.linkInstallation(request.installationId(), body.vehicleId(), now))
+                    fail(HttpStatus.CONFLICT, "ALREADY_LINKED");
+            } else repository.resumeInstallation(request.installationId(), now);
             repository.completeDirect(request.id(), body.vehicleId(), user, key, now);
         } catch (DataIntegrityViolationException ex) {
             fail(HttpStatus.CONFLICT, "VEHICLE_ALREADY_LINKED");

@@ -340,7 +340,6 @@ public class MaintenanceService {
     private UUID installationVehicle(String bearer) {
         UUID installation = auth.require(bearer).id();
         pairing.lockInstallation(installation);
-        access.requireCollection(installation);
         UUID vehicle = linked(installation);
         repo.lockVehicle(vehicle);
         return vehicle;

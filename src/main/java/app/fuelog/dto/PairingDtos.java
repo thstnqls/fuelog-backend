@@ -157,5 +157,7 @@ public final class PairingDtos {
                             example = "22222222-2222-4222-8222-222222222222",
                             nullable = true)
                     UUID vehicle_id,
-            @Schema(description = "차량 연결 완료 여부", example = "true") boolean paired) {}
+            @Schema(description = "차량 연결 완료 여부", example = "true") boolean paired,
+            @Schema(description = "마지막 QR 인증 사용자. 미인증·해제·멤버십 철회 시 null") UUID authenticated_user_id,
+            String authenticated_user_name, String vehicle_name) {}
 }

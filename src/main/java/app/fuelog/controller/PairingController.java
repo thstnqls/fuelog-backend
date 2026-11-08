@@ -472,8 +472,7 @@ public class PairingController {
     @Operation(
             summary = "차량 앱 설치 연결 상태 조회",
             description =
-                    "호출 주체: 설치된 차량 앱. 저장된 설치 ID·비밀값으로 현재 차량 연결 여부를 확인합니다. paired=true면 차량 앱은 C01 대신"
-                            + " C07로 이동합니다.")
+                    "호출 주체: 설치된 차량 앱. 저장된 설치 ID·비밀값으로 현재 차량과 마지막 QR 인증 사용자를 확인합니다. vehicle_id는 사용자 연결 해제 후에도 유지되며, paired와 authenticated_user_id가 사용자 연결 여부를 나타냅니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",

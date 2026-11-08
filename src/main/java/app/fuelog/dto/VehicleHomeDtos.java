@@ -147,7 +147,12 @@ public final class VehicleHomeDtos {
                     @Schema(
                             allowableValues = {"manual_app"},
                             example = "manual_app")
-                    String source) {}
+                    String source,
+            @Schema(description = "기록 시작 때 확인한 마지막 QR 인증 사용자. 서버의 현재 사용자와 일치해야 함") UUID subjectId) {
+        public IntervalStartRequest(String localIntervalId, Instant startedAt, String source) {
+            this(localIntervalId, startedAt, source, null);
+        }
+    }
 
     @Schema(name = "VehicleHomeInterval")
     public record Interval(

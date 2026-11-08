@@ -45,9 +45,7 @@ public class VehicleHomeController {
     @Operation(
             summary = "차량 홈 조회",
             description =
-                    "장치의 설치 Bearer가 필요하며 차량이 연결되어 있어야 합니다. 개인 데이터가 필요하면 X-Trip-User-Session: Bearer"
-                        + " <scopedToken>을 추가하세요.\n\n"
-                        + "사용자 세션이 없으면 개인 값은 null, 상태는 needs_user_proof입니다. 세션이 무효해 401/403이 반환되면"
+                    "장치의 설치 Bearer로 마지막 QR 인증 사용자의 개인 홈을 조회합니다. 추가 구간 QR은 필요하지 않습니다. 인증된 사용자가 없으면 개인 값은 null, 상태는 needs_user_proof입니다. 세션이 무효해 401/403이 반환되면"
                         + " 앱의 개인 캐시를 삭제하세요. 거리 단위는 km, 문자열 시각은 UTC입니다.")
     @ApiResponses({
         @ApiResponse(
@@ -77,7 +75,7 @@ public class VehicleHomeController {
             @Parameter(
                             name = "X-Trip-User-Session",
                             in = ParameterIn.HEADER,
-                            description = "검증된 운행 사용자 scopedToken. 없는 경우 개인 필드는 비공개",
+                            description = "이전 클라이언트용 scopedToken. 생략 시 마지막 QR 인증 사용자 사용",
                             example = "Bearer AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
                     @RequestHeader(value = "X-Trip-User-Session", required = false)
                     String scopedBearer) {
@@ -242,8 +240,7 @@ public class VehicleHomeController {
             description =
                     "장치의 설치 Bearer로 호출하며 source는 manual_app만 허용합니다. localIntervalId는 재시도에도 같은 값을"
                         + " 유지하세요.\n\n"
-                        + "사용자에게 구간을 귀속하려면 시작 시 X-Trip-User-Session을 보내세요. 생략한 구간은 익명으로 저장되며 나중에"
-                        + " 로그인해도 자동 귀속되지 않습니다. 차량 시동에 따른 자동 기록 시작은 수행하지 않습니다.")
+                        + "시작 시 subjectId에 installations/me의 authenticated_user_id를 보내세요. 현재 인증 사용자와 일치할 때만 구간에 고정합니다. 기존 익명 구간은 재귀속하지 않습니다. 차량 시동에 따른 자동 기록 시작은 수행하지 않습니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",

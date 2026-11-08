@@ -21,7 +21,7 @@ public final class TripSummaryDtos {
                     @NotBlank
                     @Pattern(regexp = "manual_app")
                     String source,
-            @Schema(description = "같은 구간에서 서버가 verify한 C03 candidateId. 미확정 구간은 null")
+            @Schema(description = "과거 구간의 C03 candidateId. 새 페어링 사용자 구간은 null이며 소유자는 시작 시 서버에 고정됨")
                     UUID userConsentId,
             @Schema(description = "운행 시작 시각. UTC ISO-8601 문자열.") @NotNull Instant startedAt,
             @Schema(description = "운행 종료 시각. UTC ISO-8601 문자열.") @NotNull Instant endedAt,

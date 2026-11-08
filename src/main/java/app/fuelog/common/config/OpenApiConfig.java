@@ -45,8 +45,8 @@ public class OpenApiConfig {
                                 ### 인증값 선택
                                 - **모바일:** Supabase 로그인 access token을 Authorization: Bearer로 보냅니다. /mobile/**와 /auth/me에서 사용합니다.
                                 - **장치:** 설치 비밀값을 Authorization: Bearer로 보냅니다. 차량 연결·홈·기록·주유·정비·설정 API에서 사용합니다.
-                                - **개인 홈:** 장치 인증에 X-Trip-User-Session: Bearer <scopedToken>을 추가합니다. scopedToken은 /trip-user/session에서 받는 30분 사용자 세션입니다.
-                                - **구간 사용자:** /trip-user/verify로 확인한 candidateId를 X-Trip-User-Candidate에 보냅니다. 이 헤더에는 Bearer를 붙이지 않습니다.
+                                - **현재 사용자:** GET /installations/me의 authenticated_user_id가 마지막 QR 인증 사용자입니다. 추가 구간 QR 없이 이 사용자의 개인 홈을 조회합니다.
+                                - **새 운행:** 시작 본문의 subjectId를 현재 인증 사용자에 고정합니다. 기존 candidateId 요청은 과거 기록 호환용입니다.
 
                                 ### 설치 등록과 연결
                                 /installations는 설치 ID와 32바이트 비밀값을 한 번 발급합니다. 이 비밀값은 장치 Bearer에도 사용할 수 있습니다.
