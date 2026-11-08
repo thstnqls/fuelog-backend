@@ -1,7 +1,7 @@
 package app.fuelog.repository;
 
+import app.fuelog.common.TimeUtils;
 import app.fuelog.dto.TripUserCandidateDtos;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -10,7 +10,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -227,10 +226,10 @@ public class TripUserCandidateRepository {
     }
 
     private static LocalDateTime time(Instant value) {
-        return LocalDateTime.ofInstant(value, ZoneOffset.UTC);
+        return TimeUtils.toLocalDateTime(value);
     }
 
     private static Instant instant(LocalDateTime value) {
-        return value == null ? null : value.toInstant(ZoneOffset.UTC);
+        return value == null ? null : TimeUtils.toInstant(value);
     }
 }

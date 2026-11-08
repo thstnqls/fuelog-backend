@@ -1,5 +1,6 @@
 package app.fuelog.service;
 
+import app.fuelog.common.TimeUtils;
 import app.fuelog.dto.TripSummaryDtos.*;
 import app.fuelog.repository.*;
 
@@ -77,10 +78,8 @@ public class TripSummaryService {
                                     + " (observed_at<? OR observed_at>?)",
                             Integer.class,
                             interval.id().toString(),
-                            java.time.LocalDateTime.ofInstant(
-                                    body.startedAt(), java.time.ZoneOffset.UTC),
-                            java.time.LocalDateTime.ofInstant(
-                                    body.endedAt(), java.time.ZoneOffset.UTC));
+                            TimeUtils.toLocalDateTime(body.startedAt()),
+                            TimeUtils.toLocalDateTime(body.endedAt()));
             if (outside != null && outside > 0)
                 fail(HttpStatus.CONFLICT, "INTERVAL_BOUNDARY_MISMATCH");
             Integer missingSamples =
@@ -286,7 +285,7 @@ public class TripSummaryService {
                         "SELECT updated_at FROM trip_user_candidates WHERE id=?",
                         java.time.LocalDateTime.class,
                         consent.toString());
-        if (verifiedAt == null || started.isBefore(verifiedAt.toInstant(java.time.ZoneOffset.UTC)))
+        if (verifiedAt == null || started.isBefore(TimeUtils.toInstant(verifiedAt)))
             fail(HttpStatus.FORBIDDEN, "TRIP_PRECEDES_USER_VERIFICATION");
         if (!candidates.memberForUpdate(c.userId(), vehicle))
             fail(HttpStatus.FORBIDDEN, "VEHICLE_MEMBERSHIP_REQUIRED");

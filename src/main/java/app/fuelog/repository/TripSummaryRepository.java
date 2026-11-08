@@ -1,12 +1,11 @@
 package app.fuelog.repository;
 
+import app.fuelog.common.TimeUtils;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
-
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -181,7 +180,6 @@ public class TripSummaryRepository {
                         user.toString());
         return rows.isEmpty() ? null : rows.getFirst();
     }
-
     public void read(long id, Instant at) {
         db.update(
                 "UPDATE mobile_trip_inbox SET read_at=COALESCE(read_at,?) WHERE id=?",
@@ -198,10 +196,10 @@ public class TripSummaryRepository {
     }
 
     private static LocalDateTime time(Instant at) {
-        return LocalDateTime.ofInstant(at, ZoneOffset.UTC);
+        return TimeUtils.toLocalDateTime(at);
     }
 
     private static Instant instant(LocalDateTime at) {
-        return at == null ? null : at.toInstant(ZoneOffset.UTC);
+        return at == null ? null : TimeUtils.toInstant(at);
     }
 }

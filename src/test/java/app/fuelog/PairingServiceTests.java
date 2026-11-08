@@ -90,7 +90,7 @@ class PairingServiceTests {
         UUID user = UUID.randomUUID();
         var issued = service.issue(installation, "first");
         db.update("UPDATE pairing_requests SET expires_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(1), java.time.ZoneOffset.UTC),
+                app.fuelog.common.TimeUtils.toLocalDateTime(Instant.now().minusSeconds(1)),
                 issued.id().toString());
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> service.preview(user, new PairingDtos.PreviewRequest(issued.id(), issued.qr().proof())));
@@ -319,7 +319,7 @@ class PairingServiceTests {
                 .andExpect(status().isForbidden());
         assertNotEquals(firstId, JsonPath.read(two, "$.requestId"));
         db.update("UPDATE pairing_requests SET expires_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(1), java.time.ZoneOffset.UTC), firstId);
+                app.fuelog.common.TimeUtils.toLocalDateTime(Instant.now().minusSeconds(1)), firstId);
         when(decoder.decode("user-token")).thenReturn(jwt(UUID.randomUUID()));
         mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
                         .contentType(MediaType.APPLICATION_JSON).content(envelope(firstId, nonce)))

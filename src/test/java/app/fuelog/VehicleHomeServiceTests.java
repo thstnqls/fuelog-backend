@@ -186,7 +186,7 @@ class VehicleHomeServiceTests {
                 .andExpect(status().isGone());
         String nextId = JsonPath.read(next, "$.challengeId");
         db.update("UPDATE trip_user_challenges SET expires_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(1), java.time.ZoneOffset.UTC), nextId);
+                app.fuelog.common.TimeUtils.toLocalDateTime(Instant.now().minusSeconds(1)), nextId);
         mvc.perform(post("/mobile/trip-user/approve").header("Authorization", "Bearer mobile-user")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"challengeId\":\"" + nextId + "\",\"proof\":\""
