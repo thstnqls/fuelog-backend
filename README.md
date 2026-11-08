@@ -321,6 +321,10 @@ domain.<기능명>
 
 ## DB 마이그레이션
 
+전체 업무 테이블 30개와 컬럼 286개의 용도·타입·NULL·기본값은
+[DB 스키마 설명](docs/DATABASE_SCHEMA.md)에 정리되어 있습니다.
+V13은 기존 컬럼 속성과 제약을 유지하면서 모든 업무 테이블·컬럼에 한국어 COMMENT를 추가합니다.
+
 `src/main/resources/db/migration`에 `V1__create_<table>.sql`부터 추가합니다.
 이미 적용한 파일은 수정하지 않고 후속 버전 파일을 추가합니다.
 local/prod 모두 Flyway 적용 후 JPA가 스키마를 검증합니다.

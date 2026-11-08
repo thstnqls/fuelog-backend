@@ -4,6 +4,11 @@
 이후 변경은 `V2__...sql`, `V3__...sql`처럼 새로운 파일로 추가합니다.
 이미 적용한 파일은 수정하지 않습니다.
 
+`V13__document_tables_and_columns.sql`은 V12까지의 업무 테이블 30개·컬럼 286개에
+한국어 COMMENT를 추가합니다. 타입·NULL 허용·기본값·AUTO_INCREMENT와 기존 제약을
+유지하며, 다음 애플리케이션 시작 시 Flyway가 연결 DB에 적용합니다.
+전체 목록과 컬럼 설명은 [DB 스키마 설명](../../../../../docs/DATABASE_SCHEMA.md)에 있습니다.
+
 local/prod 모두 Flyway가 먼저 마이그레이션하고 Hibernate가 엔티티와 스키마를
 검증합니다(`ddl-auto: validate`). 도메인이 정의되지 않은 초기 상태에서는
 업무 테이블을 생성하지 않습니다.
