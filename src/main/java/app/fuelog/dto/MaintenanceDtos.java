@@ -77,7 +77,7 @@ public final class MaintenanceDtos {
     public record Summary(
             @Schema(description = "서버 저장 데이터의 버전. 변경할 때 증가합니다.") long revision,
             Odometer odometer,
-            List<SummaryItem> items) {}
+            List<SummaryItem> items, boolean canEdit, UUID editorSubjectId) {}
 
     @Schema(name = "MaintenancePlanInput")
     public record PlanInput(
@@ -92,6 +92,12 @@ public final class MaintenanceDtos {
                     BigDecimal intervalKm,
             @Schema(description = "정비 반복 주기(달력 개월 수, 1~1200).") @Min(1) @Max(1200)
                     Integer intervalMonths) {}
+
+    public record VehiclePlanInput(
+            @NotNull @jakarta.validation.Valid PlanInput plan,
+            LocalDate lastServiceDate,
+            @DecimalMin("0") @Digits(integer=9,fraction=3) BigDecimal lastServiceKm,
+            @NotBlank @Size(max=100) String operationId) {}
 
     @Schema(name = "MaintenanceEvidence")
     public record Evidence(

@@ -54,7 +54,7 @@ public class MaintenanceService {
     public Summary summary(String bearer) {
         UUID vehicle = installationVehicle(bearer);
         Instant now = Instant.now();
-        LocalDate today = LocalDate.ofInstant(now, ZoneOffset.UTC);
+        LocalDate today = LocalDate.ofInstant(now, ZoneId.of("Asia/Seoul"));
         Sample sample = repo.latest(vehicle);
         boolean fresh =
                 sample != null && !sample.observedAt().isBefore(now.minus(ODOMETER_FRESHNESS));
@@ -116,7 +116,9 @@ public class MaintenanceService {
                                         .thenComparing(p -> p.id().toString()))
                         .limit(2)
                         .toList();
-        return new Summary(repo.revision(vehicle), odometer, items);
+        UUID editor = access.currentUser(auth.require(bearer).id());
+        boolean canEdit = editor != null && "OWNER".equals(repo.role(vehicle, editor));
+        return new Summary(repo.revision(vehicle), odometer, items, canEdit, canEdit ? editor : null);
     }
 
     @Transactional
@@ -156,6 +158,52 @@ public class MaintenanceService {
     }
 
     @Transactional
+    public Plans vehiclePlans(String bearer) {
+        var owner = deviceOwner(bearer);
+        return new Plans(repo.plans(owner.vehicle()).stream().filter(p -> p.shared() && p.active()).map(this::view).toList());
+    }
+
+    @Transactional
+    public Plan putVehiclePlan(String bearer, UUID item, String ifMatch, VehiclePlanInput b) {
+        var owner = deviceOwner(bearer);
+        validateBean(b);
+        if (!b.plan().shared()) fail(HttpStatus.BAD_REQUEST, "VEHICLE_PLAN_MUST_BE_SHARED");
+        PlanRow prior = repo.plan(owner.vehicle(), item);
+        if (prior != null && !prior.shared()) fail(HttpStatus.FORBIDDEN, "PLAN_NOT_SHARED");
+        putPlan(owner.user(), owner.vehicle(), item, ifMatch, b.plan());
+        PlanRow current = repo.plan(owner.vehicle(), item);
+        if (b.lastServiceDate() != null && current.lastDate() != null && b.lastServiceDate().isBefore(current.lastDate()))
+            fail(HttpStatus.BAD_REQUEST, "CORRECT_PAST_SERVICE_IN_MOBILE_HISTORY");
+        if ((b.lastServiceDate() != null || b.lastServiceKm() != null)
+                && (!Objects.equals(b.lastServiceDate(), current.lastDate())
+                || !Objects.equals(number(b.lastServiceKm()), number(current.lastKm())))) {
+            create(owner.user(), owner.vehicle(), b.operationId(), new EventInput(item, b.lastServiceDate(),
+                    b.lastServiceKm(), Status.CONFIRMED, true, false, null, null, null, null, null));
+        }
+        return view(repo.plan(owner.vehicle(), item));
+    }
+
+    @Transactional
+    public Deleted deleteVehiclePlan(String bearer, UUID item, String ifMatch) {
+        var owner = deviceOwner(bearer);
+        if (!requirePlan(owner.vehicle(), item).shared()) fail(HttpStatus.FORBIDDEN, "PLAN_NOT_SHARED");
+        return deletePlan(owner.user(), owner.vehicle(), item, ifMatch);
+    }
+
+    private DeviceOwner deviceOwner(String bearer) {
+        UUID installation = auth.require(bearer).id();
+        pairing.lockInstallation(installation);
+        access.requireCollection(installation);
+        UUID vehicle = linked(installation);
+        repo.lockVehicle(vehicle);
+        UUID user = access.currentUser(installation);
+        if (user == null) fail(HttpStatus.FORBIDDEN, "VERIFIED_OWNER_REQUIRED");
+        ownerRole(repo.role(vehicle, user));
+        return new DeviceOwner(user, vehicle);
+    }
+    private record DeviceOwner(UUID user, UUID vehicle) {}
+
+    @Transactional
     public Plans plans(UUID user, UUID vehicle) {
         member(user, vehicle);
         return new Plans(
@@ -177,7 +225,7 @@ public class MaintenanceService {
                 fail(HttpStatus.FORBIDDEN, "PLAN_OWNER_REQUIRED");
         } else if (ifMatch != null && expected(ifMatch) != 0)
             fail(HttpStatus.PRECONDITION_FAILED, "REVISION_MISMATCH");
-        if (b.shared()) manager(role);
+        if (b.shared()) ownerRole(role);
         if (b.intervalKm() == null && b.intervalMonths() == null)
             fail(HttpStatus.BAD_REQUEST, "MAINTENANCE_CYCLE_REQUIRED");
         if (b.basis() == Basis.USER && b.evidenceId() != null)
@@ -260,7 +308,7 @@ public class MaintenanceService {
         if (!prior.author().equals(user)) fail(HttpStatus.FORBIDDEN, "EVENT_AUTHOR_REQUIRED");
         if (prior.deletedAt() != null) fail(HttpStatus.GONE, "EVENT_DELETED");
         EventInput original = parse(prior);
-        if (original.shared()) manager(role);
+        if (original.shared()) ownerRole(role);
         match(ifMatch, prior.revision());
         if (patch == null || !patch.isObject() || patch.isEmpty())
             fail(HttpStatus.BAD_REQUEST, "INVALID_PATCH");
@@ -294,7 +342,7 @@ public class MaintenanceService {
         String role = member(user, vehicle);
         EventRow prior = requireEvent(vehicle, eventId);
         if (!prior.author().equals(user)) fail(HttpStatus.FORBIDDEN, "EVENT_AUTHOR_REQUIRED");
-        if (parse(prior).shared()) manager(role);
+        if (parse(prior).shared()) ownerRole(role);
         if (prior.deletedAt() != null && expected(ifMatch) == prior.revision() - 1)
             return new Deleted(eventId, prior.revision(), true);
         match(ifMatch, prior.revision());
@@ -360,9 +408,8 @@ public class MaintenanceService {
         return role;
     }
 
-    private static void manager(String role) {
-        if (!"OWNER".equals(role) && !"MANAGER".equals(role))
-            fail(HttpStatus.FORBIDDEN, "VEHICLE_MANAGEMENT_REQUIRED");
+    private static void ownerRole(String role) {
+        if (!"OWNER".equals(role)) fail(HttpStatus.FORBIDDEN, "VEHICLE_OWNER_REQUIRED");
     }
 
     private static boolean visible(PlanRow p, UUID user) {
@@ -370,7 +417,7 @@ public class MaintenanceService {
     }
 
     private static void writablePlan(PlanRow p, UUID user, String role) {
-        if (p.shared()) manager(role);
+        if (p.shared()) ownerRole(role);
         else if (!p.owner().equals(user)) fail(HttpStatus.FORBIDDEN, "PLAN_OWNER_REQUIRED");
     }
 
@@ -378,7 +425,7 @@ public class MaintenanceService {
         PlanRow p = requirePlan(vehicle, b.itemId());
         if (!p.active() || !visible(p, user)) fail(HttpStatus.FORBIDDEN, "PLAN_UNAVAILABLE");
         if (b.shared()) {
-            manager(role);
+            ownerRole(role);
             if (!p.shared()) fail(HttpStatus.FORBIDDEN, "PLAN_NOT_SHARED");
         }
     }
@@ -449,7 +496,7 @@ public class MaintenanceService {
             fail(HttpStatus.BAD_REQUEST, "SERVICE_DATE_OR_ODOMETER_REQUIRED");
         if (b.serviceDate() != null
                 && (b.serviceDate().getYear() < 1900
-                        || b.serviceDate().isAfter(LocalDate.now(ZoneOffset.UTC))))
+                        || b.serviceDate().isAfter(LocalDate.now(ZoneId.of("Asia/Seoul")))))
             fail(HttpStatus.BAD_REQUEST, "INVALID_SERVICE_DATE");
         if (!b.shared() && b.detailsShared())
             fail(HttpStatus.BAD_REQUEST, "PRIVATE_EVENT_DETAILS_NOT_SHAREABLE");

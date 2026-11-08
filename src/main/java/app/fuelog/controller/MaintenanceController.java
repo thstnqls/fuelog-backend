@@ -59,6 +59,28 @@ public class MaintenanceController {
         return service.summary(bearer);
     }
 
+    @GetMapping("/maintenance/plans")
+    @Operation(summary = "차량 오너의 공용 교체주기 관리 목록")
+    public Plans plans(@RequestHeader(value="Authorization",required=false) String bearer) {
+        return service.vehiclePlans(bearer);
+    }
+
+    @PutMapping("/maintenance/plans/{itemId}")
+    @Operation(summary = "차량 오너의 공용 교체주기와 마지막 교체 기록 저장")
+    public Plan putPlan(@RequestHeader(value="Authorization",required=false) String bearer,
+            @PathVariable UUID itemId, @RequestHeader(value="If-Match",required=false) String revision,
+            @Valid @RequestBody VehiclePlanInput body, HttpServletResponse response) {
+        Plan result=service.putVehiclePlan(bearer,itemId,revision,body);
+        response.setHeader("ETag", "\""+result.revision()+"\"");
+        return result;
+    }
+
+    @DeleteMapping("/maintenance/plans/{itemId}")
+    public Deleted deletePlan(@RequestHeader(value="Authorization",required=false) String bearer,
+            @PathVariable UUID itemId, @RequestHeader(value="If-Match",required=false) String revision) {
+        return service.deleteVehiclePlan(bearer,itemId,revision);
+    }
+
     @PutMapping("/vehicle-odometer/samples/{sampleId}")
     @Operation(
             summary = "차량 원본 누적거리 업로드",

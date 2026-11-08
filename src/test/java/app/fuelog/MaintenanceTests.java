@@ -294,6 +294,47 @@ class MaintenanceTests {
     }
 
     private void plan(UUID id,String name,BigDecimal km,Integer months) { service.putPlan(owner,vehicle,id,null,new PlanInput(name,true,Basis.USER,null,km,months)); }
+    @Test
+    void vehicleOwnerCanEditCyclesWhileAnonymousMembersAndManagersOnlyRead() throws Exception {
+        plan(item,"타이어",new BigDecimal("10000"),12);
+        assertFalse(service.summary(bearer).canEdit());
+        denied(403,()->service.vehiclePlans(bearer));
+        authenticateDevice(owner);
+        assertTrue(service.summary(bearer).canEdit());
+        assertEquals(owner,service.summary(bearer).editorSubjectId());
+        VehiclePlanInput edit=new VehiclePlanInput(new PlanInput("타이어",true,Basis.USER,null,new BigDecimal("8000"),6),
+                LocalDate.now(ZoneId.of("Asia/Seoul")).minusMonths(1),new BigDecimal("45000"),"vehicle-edit");
+        Plan updated=service.putVehiclePlan(bearer,item,"1",edit);
+        equal("8000",updated.intervalKm()); assertEquals(6,updated.intervalMonths());
+        assertEquals(edit.lastServiceDate().plusMonths(6),updated.nextDueDate());
+        mvc.perform(get("/maintenance/plans").header("Authorization",bearer)).andExpect(status().isOk());
+        denied(412,()->service.putVehiclePlan(bearer,item,"1",edit));
+        assertEquals(1,count("maintenance_events"));
+        UUID newItem=UUID.randomUUID();
+        VehiclePlanInput future=new VehiclePlanInput(new PlanInput("잘못된 기록",true,Basis.USER,null,null,12),
+                LocalDate.now(ZoneId.of("Asia/Seoul")).plusDays(1),null,"future-edit");
+        denied(400,()->service.putVehiclePlan(bearer,newItem,"0",future));
+        assertTrue(service.vehiclePlans(bearer).items().stream().noneMatch(p->p.id().equals(newItem)));
+        authenticateDevice(member);
+        assertFalse(service.summary(bearer).canEdit());
+        assertEquals(1,service.summary(bearer).items().size());
+        denied(403,()->service.putVehiclePlan(bearer,item,"2",edit));
+        db.update("UPDATE group_members SET role='MANAGER' WHERE vehicle_id=? AND user_id=?",vehicle.toString(),member.toString());
+        assertFalse(service.summary(bearer).canEdit());
+        denied(403,()->service.deleteVehiclePlan(bearer,item,"2"));
+        denied(403,()->service.putPlan(member,vehicle,item,"2",edit.plan()));
+        authenticateDevice(owner);
+        service.deleteVehiclePlan(bearer,item,"2");
+        assertTrue(service.summary(bearer).items().isEmpty());
+        assertEquals(1,count("maintenance_events"));
+    }
+
+    private void authenticateDevice(UUID user) {
+        db.update("DELETE FROM pairing_requests WHERE installation_id=?",installation.toString());
+        db.update("INSERT INTO pairing_requests(id,installation_id,status,selected_vehicle_id,approved_user_id,updated_at) VALUES(?,?,'completed',?,?,CURRENT_TIMESTAMP)",
+                UUID.randomUUID().toString(),installation.toString(),vehicle.toString(),user.toString());
+    }
+
     private Plan find(UUID id) { return service.plans(owner,vehicle).items().stream().filter(p->p.id().equals(id)).findFirst().orElseThrow(); }
     private EventInput event(UUID id,String date,String km,boolean shared,Status status) {
         return new EventInput(id,date==null ? null : LocalDate.parse(date),km==null ? null : new BigDecimal(km),status,shared,false,new BigDecimal("85000"),"KRW","private-memo","private-shop","https://example.test/private-receipt");
