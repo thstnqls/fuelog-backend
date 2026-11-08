@@ -1,0 +1,21 @@
+-- Standard member REFERENCE prices only; not the driver's confirmed payment tariff.
+INSERT INTO charging_tariffs VALUES ('PI','SLOW','reference-2026-11-08',295,'https://www.gschargev.co.kr/pricing.html','2026-08-01','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('PI','MEDIUM','reference-2026-11-08',307,'https://www.gschargev.co.kr/pricing.html','2026-08-01','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('PI','FAST_50','reference-2026-11-08',325,'https://www.gschargev.co.kr/pricing.html','2026-08-01','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('PI','FAST_100','reference-2026-11-08',345,'https://www.gschargev.co.kr/pricing.html','2026-08-01','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('PI','ULTRA','reference-2026-11-08',345,'https://www.gschargev.co.kr/pricing.html','2026-08-01','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('CV','SLOW','reference-2026-11-08',289,'https://chaevi.com/kr/service/price.php',NULL,'2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('CV','MEDIUM','reference-2026-11-08',315,'https://chaevi.com/kr/service/price.php',NULL,'2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('CV','FAST_50','reference-2026-11-08',410,'https://chaevi.com/kr/service/price.php',NULL,'2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('CV','FAST_100','reference-2026-11-08',430,'https://chaevi.com/kr/service/price.php',NULL,'2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('CV','ULTRA','reference-2026-11-08',430,'https://chaevi.com/kr/service/price.php',NULL,'2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('ME','SLOW','reference-2026-11-08',295,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-07-31','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('ME','MEDIUM','reference-2026-11-08',307.2,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-07-31','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('ME','FAST_50','reference-2026-11-08',325.6,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-07-31','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('ME','FAST_100','reference-2026-11-08',348.4,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-07-31','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('ME','ULTRA','reference-2026-11-08',393.1,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-07-31','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('KP','SLOW','reference-2026-11-08',295,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-09-10','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('KP','MEDIUM','reference-2026-11-08',307.2,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-09-10','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('KP','FAST_50','reference-2026-11-08',325.6,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-09-10','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('KP','FAST_100','reference-2026-11-08',348.4,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-09-10','2026-11-08 00:00:00','2026-12-08 00:00:00');
+INSERT INTO charging_tariffs VALUES ('KP','ULTRA','reference-2026-11-08',393.1,'https://ev.or.kr/nportal/evcarInfo/initEvcarChargePriceV2.do','2026-09-10','2026-11-08 00:00:00','2026-12-08 00:00:00');

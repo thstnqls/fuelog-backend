@@ -53,7 +53,18 @@ public final class TripSummaryDtos {
                     String currency,
             @Schema(description = "연료 단가의 확인 출처.") @Size(max = 200) String priceSource,
             @Schema(description = "단가를 확인한 UTC 시각. 운행 종료 시각 이후일 수 없습니다.") Instant priceObservedAt,
-            @Schema(description = "단가와 출처·통화·확인 시각이 유효한지 여부.") @NotNull Boolean priceValid) {}
+            @Schema(description = "단가와 출처·통화·확인 시각이 유효한지 여부.") @NotNull Boolean priceValid,
+            @jakarta.validation.Valid Ev ev) {
+        public Upload(UUID tripId,Long revision,String source,UUID userConsentId,Instant startedAt,Instant endedAt,
+                Boolean endEstimated,BigDecimal distanceKm,Boolean distanceValid,BigDecimal startFuelLiters,
+                BigDecimal endFuelLiters,Boolean fuelEndpointsValid,Boolean missing,Boolean refueled,
+                Boolean ownerChanged,BigDecimal unitPrice,String currency,String priceSource,Instant priceObservedAt,Boolean priceValid) {
+            this(tripId,revision,source,userConsentId,startedAt,endedAt,endEstimated,distanceKm,distanceValid,
+                startFuelLiters,endFuelLiters,fuelEndpointsValid,missing,refueled,ownerChanged,unitPrice,currency,priceSource,priceObservedAt,priceValid,null);
+        }
+    }
+    public record Ev(boolean detected, boolean endpointsValid, boolean missing, boolean chargedDuringInterval,
+            @DecimalMin("0") @DecimalMax("1000") BigDecimal consumedKwh) {}
 
     @Schema(name = "TripSummarySynced")
     public record Synced(
@@ -95,7 +106,8 @@ public final class TripSummaryDtos {
             Money estimatedCost,
             String priceSource,
             Instant priceObservedAt,
-            Quality quality) {}
+            Quality quality,
+            Metric energyConsumedKwh, Metric energyEfficiencyKmPerKwh) {}
 
     @Schema(name = "TripSummaryDeliver")
     public record Deliver(

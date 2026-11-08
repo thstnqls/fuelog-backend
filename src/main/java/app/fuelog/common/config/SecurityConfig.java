@@ -32,6 +32,7 @@ public class SecurityConfig {
                         "/sync/**",
                         "/mobile-inbox/**",
                         "/fuel-candidates/**",
+                        "/charge-candidates/**",
                         "/maintenance/**",
                         "/vehicle-odometer/**",
                         "/installation/**")

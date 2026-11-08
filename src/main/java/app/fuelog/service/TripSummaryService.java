@@ -325,7 +325,7 @@ public class TripSummaryService {
                 b.currency(),
                 b.priceSource(),
                 b.priceObservedAt(),
-                b.priceValid());
+                b.priceValid(),b.ev()==null?null:new Ev(b.ev().detected(),b.ev().endpointsValid(),b.ev().missing(),b.ev().chargedDuringInterval(),number(b.ev().consumedKwh())));
     }
 
     private static void validate(Upload b) {
@@ -400,6 +400,13 @@ public class TripSummaryService {
                 costReason == null
                         ? consumed.multiply(b.unitPrice()).setScale(2, RoundingMode.HALF_UP)
                         : null;
+        Ev ev=b.ev();
+        String evReason=ev==null || !ev.detected() || !ev.endpointsValid() ? "invalid_or_missing_battery_endpoints"
+                : ev.missing() || b.missing() || b.endEstimated() ? "missing_recording"
+                : b.ownerChanged() ? "owner_changed" : ev.chargedDuringInterval() ? "charged_during_interval"
+                : ev.consumedKwh()==null || ev.consumedKwh().signum()<=0 ? "non_positive_consumption" : null;
+        BigDecimal energy=evReason==null?ev.consumedKwh():null;
+        BigDecimal evEconomy=energy!=null && distanceOk?b.distanceKm().divide(energy,3,RoundingMode.HALF_UP):null;
         return new Summary(
                 b.tripId(),
                 b.revision(),
@@ -418,7 +425,9 @@ public class TripSummaryService {
                         b.endEstimated(),
                         b.refueled(),
                         b.ownerChanged(),
-                        "client_reported"));
+                        "client_reported"),
+                new Metric(energy,energy==null?"unavailable":"available",evReason),
+                new Metric(evEconomy,evEconomy==null?"unavailable":"available",evReason==null && !distanceOk?"invalid_or_missing_distance":evReason));
     }
 
     private static void fail(HttpStatus status, String code) {

@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:.env[.properties],optional:file:.env.local[.properties]
   application:
     name: fuelog-backend
   profiles:
@@ -53,6 +55,10 @@ springdoc:
   show-actuator: false
 
 fuelog:
+  charging:
+    data-endpoint: ${DATA_ENDPOINT:}
+    data-key: ${DATA_KEY:}
+    pleos-coordinate-system: ${PLEOS_COORDINATE_SYSTEM:}
   auth:
     issuer: ${FUELOG_JWT_ISSUER:${SUPABASE_URL}/auth/v1}
     jwk-set-uri: ${FUELOG_JWK_SET_URI:${SUPABASE_URL}/auth/v1/.well-known/jwks.json}
