@@ -1,5 +1,6 @@
 package app.fuelog;
 
+import app.fuelog.common.TimeUtils;
 import app.fuelog.dto.TripSummaryDtos.*;
 import app.fuelog.dto.TripUserCandidateDtos;
 import app.fuelog.dto.VehicleHomeDtos;
@@ -67,7 +68,7 @@ class TripSummaryTests {
         candidates.verify(bearer, new TripUserCandidateDtos.VerifyRequest(interval, consent, "c04-verify"));
         // Fixture represents a grant issued before recording began, with the preparation interval already allocated.
         db.update("UPDATE trip_user_candidates SET updated_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(start.minusSeconds(1), java.time.ZoneOffset.UTC), consent.toString());
+                TimeUtils.toLocalDateTime(start.minusSeconds(1)), consent.toString());
         when(decoder.decode("owner")).thenReturn(jwt(user));
         when(decoder.decode("other")).thenReturn(jwt(UUID.randomUUID()));
     }
@@ -128,7 +129,7 @@ class TripSummaryTests {
     @Test
     void removedMembershipRevokedConsentAndMixedSamplesAreRejected() {
         db.update("INSERT INTO recording_samples (interval_id,sequence,batch_id,observed_at,distance_km,fuel_status,received_at) VALUES (?,1,'anonymous',?,1,'unsupported',CURRENT_TIMESTAMP)",
-                interval.toString(), java.time.LocalDateTime.ofInstant(start.plusSeconds(1), java.time.ZoneOffset.UTC));
+                interval.toString(), TimeUtils.toLocalDateTime(start.plusSeconds(1)));
         assertStatus(403, () -> service.upload(bearer, trip, body(1, consent)));
         db.update("DELETE FROM recording_samples WHERE interval_id=?", interval.toString());
         service.upload(bearer, trip, body(1, consent));
@@ -155,8 +156,8 @@ class TripSummaryTests {
     void historicalGrantWorksOnlyForItsOriginalIntervalAndBoundaries() {
         // Offline upload after grant expiry is still scoped to the server-verified original interval.
         db.update("UPDATE trip_user_candidates SET verification_expires_at=?,expires_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(end, java.time.ZoneOffset.UTC),
-                java.time.LocalDateTime.ofInstant(end, java.time.ZoneOffset.UTC), consent.toString());
+                TimeUtils.toLocalDateTime(end),
+                TimeUtils.toLocalDateTime(end), consent.toString());
         service.upload(bearer, trip, body(1, consent));
         Upload changed = change(body(2, consent), start.toString(), start.minusSeconds(1).toString());
         assertStatus(409, () -> service.upload(bearer, trip, changed));
@@ -168,7 +169,7 @@ class TripSummaryTests {
     @Test
     void missingSamplesCannotBeReportedAsComplete() {
         db.update("INSERT INTO recording_samples (interval_id,sequence,batch_id,observed_at,missing_reason,fuel_status,received_at) VALUES (?,1,'missing',?,'odometer_reset','unsupported',CURRENT_TIMESTAMP)",
-                interval.toString(), java.time.LocalDateTime.ofInstant(start.plusSeconds(1), java.time.ZoneOffset.UTC));
+                interval.toString(), TimeUtils.toLocalDateTime(start.plusSeconds(1)));
         assertStatus(409, () -> service.upload(bearer, trip, body(1, null)));
         var partial = change(body(1, null), "\"missing\":false", "\"missing\":true");
         service.upload(bearer, trip, partial);
@@ -180,7 +181,7 @@ class TripSummaryTests {
     @Test
     void verificationAfterRecordingStartCannotClaimPastTrip() {
         db.update("UPDATE trip_user_candidates SET updated_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(start.plusSeconds(1), java.time.ZoneOffset.UTC), consent.toString());
+                TimeUtils.toLocalDateTime(start.plusSeconds(1)), consent.toString());
         assertStatus(403, () -> service.upload(bearer, trip, body(1, consent)));
         assertEquals(0, count("trip_summaries"));
     }

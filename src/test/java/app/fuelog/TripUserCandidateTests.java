@@ -173,7 +173,7 @@ class TripUserCandidateTests {
         db.update("INSERT INTO group_members (vehicle_id,user_id,role,created_at) VALUES (?,?,?,CURRENT_TIMESTAMP)",
                 vehicle.toString(), user.toString(), "MEMBER");
         db.update("UPDATE trip_user_candidates SET expires_at=? WHERE id=?",
-                java.time.LocalDateTime.ofInstant(Instant.now().minusSeconds(1), java.time.ZoneOffset.UTC), candidate);
+                app.fuelog.common.TimeUtils.toLocalDateTime(Instant.now().minusSeconds(1)), candidate);
         mvc.perform(post("/trip-user/verify").header("Authorization", bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(verifyBody(interval, candidate, "after-expiry")))

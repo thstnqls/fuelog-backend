@@ -1,7 +1,7 @@
 package app.fuelog.repository;
 
+import app.fuelog.common.TimeUtils;
 import app.fuelog.entity.PairingRequest;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -10,7 +10,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -315,10 +314,10 @@ public class PairingRepository {
     }
 
     private static LocalDateTime time(Instant instant) {
-        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+        return TimeUtils.toLocalDateTime(instant);
     }
 
     private static Instant utc(LocalDateTime value) {
-        return value.toInstant(ZoneOffset.UTC);
+        return TimeUtils.toInstant(value);
     }
 }
