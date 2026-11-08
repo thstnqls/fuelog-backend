@@ -37,10 +37,14 @@ MEMBER는 공동 내용을 읽고 본인의 개인 계획·이벤트를 기록�
     "basis": "USER",
     "dateDue": false,
     "distanceDue": false,
-    "remainingKm": 3799.5
+    "remainingKm": 3799.5,
+    "intervalKm": 10000,
+    "intervalMonths": 12
   }]
 }
 ```
+
+조회 범위는 설치 인증으로 결정한 `vehicle_id`이며 사용자 페어링이 없어도 해당 차량 공용 주기를 제공합니다. `intervalKm`·`intervalMonths`는 반복 주기이고, `nextDueKm`·`nextDueDate`는 마지막 확정 정비로 계산한 다음 예정입니다. 정비 이력이 없어 다음 예정이 null이어도 등록된 반복 주기는 반환합니다. USER는 주기 출처(직접 설정)를 뜻하며 차량 공용 조회를 사용자별로 나누는 기준이 아닙니다. 개인 항목과 비용·메모는 기존 공개 범위를 유지합니다.
 
 예시는 계약 설명용입니다. `items`는 배열이며 최대 2개, 데이터가 없으면 빈 배열입니다.
 누적거리가 없으면 `odometer={km:null,observedAt:null,status:"unavailable"}`입니다.

@@ -38,7 +38,7 @@ public class MaintenanceController {
     @Operation(
             summary = "차량의 공동 정비 예정 조회",
             description =
-                    "장치의 설치 Bearer로 연결 차량의 공동 정비 예정 최대 2개를 조회합니다. 이미 도래한 항목을 우선하며 비용·메모·정비소·영수증은"
+                    "사용자 페어링 없이 장치의 설치 Bearer로 연결 차량의 공동 정비 주기·예정 최대 2개를 조회합니다. 이미 도래한 항목을 우선하며 비용·메모·정비소·영수증은"
                         + " 포함하지 않습니다.\n\n"
                         + "누적거리가 7일보다 오래되면 status=stale이며 remainingKm와 distanceDue는 null입니다. 마지막"
                         + " 누적거리와 관측 시각은 유지합니다.")
@@ -51,7 +51,7 @@ public class MaintenanceController {
                             examples =
                                     @ExampleObject(
                                             value =
-                                                    "{\"revision\":8,\"odometer\":{\"km\":48200.5,\"observedAt\":1793940000000,\"status\":\"available\"},\"items\":[{\"id\":\"11111111-1111-4111-8111-111111111111\",\"name\":\"엔진오일\",\"lastServiceDate\":\"2026-01-10\",\"lastServiceKm\":42000,\"nextDueDate\":\"2027-01-10\",\"nextDueKm\":52000,\"basis\":\"USER\",\"dateDue\":false,\"distanceDue\":false,\"remainingKm\":3799.5}]}")))
+                                                    "{\"revision\":8,\"odometer\":{\"km\":48200.5,\"observedAt\":1793940000000,\"status\":\"available\"},\"items\":[{\"id\":\"11111111-1111-4111-8111-111111111111\",\"name\":\"엔진오일\",\"lastServiceDate\":\"2026-01-10\",\"lastServiceKm\":42000,\"nextDueDate\":\"2027-01-10\",\"nextDueKm\":52000,\"basis\":\"USER\",\"dateDue\":false,\"distanceDue\":false,\"remainingKm\":3799.5,\"intervalKm\":10000,\"intervalMonths\":12}]}")))
     public Summary summary(
             @Parameter(description = "설치 자격 증명 Bearer", required = true)
                     @RequestHeader(value = "Authorization", required = false)

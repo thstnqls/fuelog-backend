@@ -69,11 +69,35 @@ class MaintenanceTests {
         assertEquals(LocalDate.parse("2027-01-10"),row.nextDueDate());
         equal("52000",row.nextDueKm()); equal("3799.5",row.remainingKm());
         assertEquals(false,row.distanceDue());
+        equal("10000",row.intervalKm()); assertEquals(12,row.intervalMonths());
         String response=mvc.perform(get("/maintenance/summary").header("Authorization",bearer))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         for (String secret:List.of("cost","memo","shop","receiptUrl","private-memo","85000")) assertFalse(response.contains(secret),response);
         assertNull(service.events(member,vehicle,null).items().getFirst().details());
         assertEquals("private-memo",service.events(owner,vehicle,null).items().getFirst().details().memo());
+    }
+
+    @Test
+    void vehicleCycleSurvivesUserDisconnectAndIsIsolatedFromOtherVehicles() throws Exception {
+        plan(item,"타이어 점검",new BigDecimal("10000"),12);
+        UUID personal=UUID.randomUUID();
+        service.putPlan(member,vehicle,personal,null,new PlanInput("개인 알림",false,Basis.USER,null,new BigDecimal("1000"),null));
+        db.update("UPDATE vehicle_installations SET personal_access_blocked=TRUE WHERE id=?",installation.toString());
+        var common=service.summary(bearer).items();
+        assertEquals(1,common.size());
+        equal("10000",common.getFirst().intervalKm()); assertEquals(12,common.getFirst().intervalMonths());
+        assertNull(common.getFirst().nextDueDate()); assertNull(common.getFirst().nextDueKm());
+        mvc.perform(get("/maintenance/summary").header("Authorization",bearer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.items[0].intervalKm").value(10000))
+                .andExpect(jsonPath("$.items[0].intervalMonths").value(12));
+        var another=pairing.createInstallation(); UUID otherVehicle=UUID.randomUUID();
+        db.update("INSERT INTO vehicles (id,name,created_by,created_at,updated_at) VALUES (?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",otherVehicle.toString(),"다른 차량",owner.toString());
+        db.update("INSERT INTO group_members (vehicle_id,user_id,role,created_at) VALUES (?,?,?,CURRENT_TIMESTAMP)",otherVehicle.toString(),owner.toString(),"OWNER");
+        db.update("UPDATE vehicle_installations SET vehicle_id=? WHERE id=?",otherVehicle.toString(),another.installation_id().toString());
+        service.putPlan(owner,otherVehicle,UUID.randomUUID(),null,new PlanInput("다른 차량 주기",true,Basis.USER,null,new BigDecimal("5000"),6));
+        var other=service.summary("Bearer "+another.installation_secret()).items().getFirst();
+        equal("5000",other.intervalKm()); assertEquals(6,other.intervalMonths());
+        equal("10000",service.summary(bearer).items().getFirst().intervalKm());
     }
 
     @Test

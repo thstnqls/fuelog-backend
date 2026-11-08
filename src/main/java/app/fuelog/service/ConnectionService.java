@@ -26,9 +26,11 @@ import javax.crypto.spec.SecretKeySpec;
 @Service
 public class ConnectionService {
     private final PairingRepository repository;
+    private final InstallationAccess access;
 
-    public ConnectionService(PairingRepository repository) {
+    public ConnectionService(PairingRepository repository, InstallationAccess access) {
         this.repository = repository;
+        this.access = access;
     }
 
     @Transactional
@@ -89,10 +91,13 @@ public class ConnectionService {
         if (!"fuelog.vehicle-registration".equals(envelope.type()) || envelope.version() != 1)
             fail(HttpStatus.BAD_REQUEST, "INVALID_QR_TYPE");
         PairingRequest request = repository.get(envelope.requestId(), false);
+        // 기존 로그인 유지 여부만 확인한다. 폐기·사용자 변경 후에는 이전 QR로 복구하지 않는다.
+        if (isCurrentPairing(request, user))
+            return new ConnectionDtos.Inspection(request.id(), 0, "COMPLETED", request.selectedVehicleId());
         requireWaiting(request);
         requireNonce(request, envelope.nonce());
         return new ConnectionDtos.Inspection(
-                request.id(), remaining(request.expiresAt(), Instant.now()));
+                request.id(), remaining(request.expiresAt(), Instant.now()), "WAITING", null);
     }
 
     @Transactional
@@ -133,6 +138,14 @@ public class ConnectionService {
         UUID id = repository.installationByCredentialHash(sha256(credential));
         if (id == null) fail(HttpStatus.UNAUTHORIZED, "UNKNOWN_INSTALLATION");
         return id;
+    }
+
+    private boolean isCurrentPairing(PairingRequest request, UUID user) {
+        return "completed".equals(request.status())
+                && user.equals(request.approvedUserId())
+                && request.selectedVehicleId() != null
+                && request.selectedVehicleId().equals(repository.linkedVehicle(request.installationId()))
+                && user.equals(access.currentUser(request.installationId()));
     }
 
     private static UUID parseOptionalRequestId(String value) {

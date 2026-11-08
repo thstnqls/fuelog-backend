@@ -75,9 +75,12 @@ public class PairingService {
     @Transactional(readOnly = true)
     public PairingDtos.Preview preview(UUID user, PairingDtos.PreviewRequest body) {
         PairingRequest request = repository.get(body.request_id(), false);
+        // 완료된 QR은 새 권한을 발급하지 않고 현재 연결된 본인의 로그인 상태만 반환한다.
+        if (isCurrentPairing(request, user))
+            return new PairingDtos.Preview(request.id(), request.expiresAt(), "completed", request.selectedVehicleId());
         requirePending(request);
         requireProof(request, body.proof());
-        return new PairingDtos.Preview(request.id(), request.expiresAt());
+        return new PairingDtos.Preview(request.id(), request.expiresAt(), "pending", null);
     }
 
     @Transactional
@@ -183,6 +186,14 @@ public class PairingService {
 
     private void requireManager(UUID user, UUID vehicle) {
         if (user == null || !repository.userManagesVehicle(user, vehicle)) forbidden();
+    }
+
+    private boolean isCurrentPairing(PairingRequest request, UUID user) {
+        return "completed".equals(request.status())
+                && user.equals(request.approvedUserId())
+                && request.selectedVehicleId() != null
+                && request.selectedVehicleId().equals(repository.linkedVehicle(request.installationId()))
+                && user.equals(access.currentUser(request.installationId()));
     }
 
     private static void requirePending(PairingRequest request) {

@@ -45,7 +45,8 @@ public class MobileConnectionController {
             summary = "모바일에서 차량 연결 QR 확인",
             description =
                     "모바일의 Supabase JWT와 QR의 type, version, requestId, nonce를 보냅니다.\n\n"
-                            + "QR의 종류·비밀값·유효기간을 검사하고 남은 초를 반환합니다. 이 호출만으로 차량 연결은 완료되지 않습니다.")
+                            + "미승인 QR은 종류·비밀값·유효기간을 검사하고 status=WAITING을 반환합니다.\n\n"
+                            + "이미 연결된 동일 계정·설치·차량이면 status=COMPLETED와 vehicleId를 반환합니다. 모바일은 차량 선택·승인 화면을 건너뛰고 로그인 완료로 이동하세요. 완료된 QR의 만료 시각은 기존 로그인을 만료시키지 않습니다. 이 응답은 기존 로그인 확인이며 연결 해제·사용자 변경·멤버십 철회 후 권한을 복구하지 않습니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",
@@ -56,7 +57,7 @@ public class MobileConnectionController {
                                 examples =
                                         @ExampleObject(
                                                 value =
-                                                        "{\"requestId\":\"8b31a39f-770f-4ae8-98f8-28166e030093\",\"remainingSeconds\":97}"))),
+                                                        "{\"requestId\":\"8b31a39f-770f-4ae8-98f8-28166e030093\",\"remainingSeconds\":97,\"status\":\"WAITING\",\"vehicleId\":null}"))),
         @ApiResponse(responseCode = "401", description = "사용자 JWT 오류"),
         @ApiResponse(responseCode = "403", description = "nonce 오류"),
         @ApiResponse(responseCode = "410", description = "만료·폐기")

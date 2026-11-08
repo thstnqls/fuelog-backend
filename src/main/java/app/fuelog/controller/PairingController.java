@@ -165,7 +165,8 @@ public class PairingController {
             summary = "모바일 QR 미리보기·검증",
             description =
                     "호출 주체: Supabase에 로그인한 휴대폰 사용자(익명 계정 제외). QR의 request_id와 proof를 HTTPS 요청 본문으로"
-                            + " 보내 유효성을 확인합니다. 이 단계에서는 proof를 소비하거나 차량을 연결하지 않습니다.")
+                            + " 보내 유효성을 확인합니다. 미승인 요청은 status=pending이므로 기존 차량 선택·확인 절차를 진행하세요.\n\n"
+                            + "현재 연결된 동일 계정·설치·차량의 완료 요청이면 status=completed와 vehicle_id를 반환합니다. 모바일은 추가 승인 화면 없이 로그인 완료로 이동하세요. 완료된 QR의 만료 시각과 무관하게 기존 로그인 상태만 확인하며, 해제·사용자 변경·멤버십 철회된 권한은 복구하지 않습니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",
@@ -177,12 +178,12 @@ public class PairingController {
                                 examples =
                                         @ExampleObject(
                                                 value =
-                                                        "{\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"expires_at\":\"2026-11-03T03:02:00Z\"}"))),
+                                                        "{\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"expires_at\":\"2026-11-03T03:02:00Z\",\"status\":\"pending\",\"vehicle_id\":null}"))),
         @ApiResponse(responseCode = "400", description = "요청 본문 형식 오류"),
         @ApiResponse(responseCode = "401", description = "Supabase 로그인 토큰 없음·무효"),
         @ApiResponse(responseCode = "403", description = "proof 불일치 또는 익명 사용자"),
         @ApiResponse(responseCode = "404", description = "요청 ID 없음"),
-        @ApiResponse(responseCode = "409", description = "이미 intent가 접수되거나 완료된 요청"),
+        @ApiResponse(responseCode = "409", description = "차량 확인 대기 또는 현재 사용자와 일치하지 않는 완료 요청"),
         @ApiResponse(responseCode = "410", description = "만료·취소된 요청")
     })
     public PairingDtos.Preview preview(

@@ -15,5 +15,22 @@
 기존 trip-user/challenges·session·candidates·verify API는 이전 클라이언트 호환용이다. 신규 앱에서는 호출하지 않는다.
 추가 DB 마이그레이션 없이 기존 완료된 pairing_requests와 QR 승인 이력을 사용한다.
 
+## 이미 연결된 사용자 QR 재스캔
+
+같은 Supabase 계정이 현재 같은 설치·차량에 연결되어 있으면 기존 QR 재스캔을 오류로 처리하지 않는다.
+물리적인 휴대폰 식별이 아니라 검증된 JWT의 사용자 UUID와 서버 연결 상태로 판정한다.
+
+| 모바일 QR 확인 API | 연결 유지 시 응답 | 최초 연결 시 응답 |
+|---|---|---|
+| `POST /mobile/connection/inspect` | `status=COMPLETED`, `vehicleId`, `remainingSeconds=0` | `status=WAITING`, `vehicleId=null` |
+| `POST /pairing-requests/preview` | `status=completed`, `vehicle_id` | `status=pending`, `vehicle_id=null` |
+
+모바일은 완료 응답을 받으면 차량 선택·승인 단계를 생략하고 로그인 완료 화면으로 이동한다.
+최초 연결·승인 대기는 기존 절차와 QR 비밀값 검증을 유지한다.
+완료된 요청의 QR 만료는 기존 로그인을 만료시키지 않는다. 완료 응답은 현재 계정의 연결 상태 조회이며
+새 로그인 권한을 발급하거나 세션·QR을 복구하지 않는다. 따라서 완료 요청의 비밀값은 다시 소비하지 않는다.
+로그아웃·연결 해제·사용자 변경·멤버십 철회 후에는 이전 QR로 로그인 권한을 복구할 수 없다.
+그 경우 새 QR과 기존 승인 절차가 필요하다. 장치 재설치로 새 installation_id를 발급받은 경우도 동일 설치로 취급하지 않는다.
+
 검증: `./gradlew test bootJar`. 재시작·만료된 QR·구간 시작 소유자 검사·요약/확인함 귀속·연결 해제 후 공동 정비 조회·재페어링·멤버십 철회를 포함한다.
 배포는 별도이며, 앱과 함께 새 응답 필드를 지원하는 서버 버전을 사용해야 한다.

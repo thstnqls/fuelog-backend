@@ -95,7 +95,9 @@ public class MaintenanceService {
                                             p.basis(),
                                             dateDue,
                                             distanceDue,
-                                            remaining);
+                                            remaining,
+                                            p.km(),
+                                            p.months());
                                 })
                         .sorted(
                                 Comparator.comparingInt(

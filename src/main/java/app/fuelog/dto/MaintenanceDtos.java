@@ -69,7 +69,9 @@ public final class MaintenanceDtos {
             @Schema(description = "USER는 사용자 기준, MANUFACTURER는 검증된 제조사 근거 기준.") Basis basis,
             Boolean dateDue,
             Boolean distanceDue,
-            BigDecimal remainingKm) {}
+            BigDecimal remainingKm,
+            @Schema(description = "차량 공용 정비 반복 주기(km). 기간 기준만 있으면 null.") BigDecimal intervalKm,
+            @Schema(description = "차량 공용 정비 반복 주기(개월). 거리 기준만 있으면 null.") Integer intervalMonths) {}
 
     @Schema(name = "MaintenanceSummary")
     public record Summary(

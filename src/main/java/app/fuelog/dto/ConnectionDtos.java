@@ -110,7 +110,9 @@ public final class ConnectionDtos {
     @Schema(name = "ConnectionInspection", description = "QR 검증 결과")
     public record Inspection(
             @Schema(description = "차량 연결 QR 요청 UUID.") UUID requestId,
-            @Schema(description = "서버 만료 시각 기준 남은 유효 시간(초).") int remainingSeconds) {}
+            @Schema(description = "서버 만료 시각 기준 남은 유효 시간(초). 이미 연결되었으면 0.") int remainingSeconds,
+            @Schema(description = "WAITING이면 기존 승인 흐름 진행, COMPLETED이면 동일 계정의 연결이 유지 중이므로 로그인 완료 화면으로 이동.", allowableValues = {"WAITING", "COMPLETED"}) String status,
+            @Schema(description = "COMPLETED일 때 현재 연결 차량 UUID. 승인 대기는 null.") UUID vehicleId) {}
 
     @Schema(name = "ConnectionApproval", description = "모바일 승인 결과")
     public record Approval(

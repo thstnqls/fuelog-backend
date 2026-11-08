@@ -260,7 +260,9 @@ class PairingServiceTests {
                 .andExpect(status().isOk());
         mvc.perform(post("/mobile/connection/inspect").header("Authorization", "Bearer user-token")
                         .contentType(MediaType.APPLICATION_JSON).content(envelope(secondId, secondNonce)))
-                .andExpect(status().isConflict());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.vehicleId").value(vehicle.toString()));
         String done = mvc.perform(post("/connection/requests/status").header("Authorization", bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"operationId\":\"" + secondOperation + "\",\"requestId\":\"" + secondId + "\"}"))

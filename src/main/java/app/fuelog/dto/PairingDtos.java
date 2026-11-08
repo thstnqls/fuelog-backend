@@ -92,12 +92,14 @@ public final class PairingDtos {
                             requiredMode = Schema.RequiredMode.REQUIRED)
                     String proof) {}
 
-    @Schema(name = "PairingPreview", description = "QR 검증 결과. 아직 차량·설치 연결은 확정되지 않았습니다.")
+    @Schema(name = "PairingPreview", description = "QR 확인 결과. 현재 연결된 동일 사용자이면 completed로 바로 로그인 완료 처리합니다.")
     public record Preview(
             @Schema(description = "검증된 요청 UUID", example = "11111111-1111-4111-8111-111111111111")
                     UUID request_id,
             @Schema(description = "서버 기준 요청 만료 시각(UTC)", example = "2026-11-03T03:02:00Z")
-                    Instant expires_at) {}
+                    Instant expires_at,
+            @Schema(description = "pending이면 차량 선택·확인 진행, completed이면 기존 로그인 유지 중.", allowableValues = {"pending", "completed"}) String status,
+            @Schema(description = "completed일 때 현재 연결 차량 UUID. pending이면 null.") UUID vehicle_id) {}
 
     @Schema(
             name = "PairingIntentRequest",
