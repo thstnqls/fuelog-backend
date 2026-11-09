@@ -299,11 +299,11 @@ public class PairingController {
     }
 
     @PostMapping("/pairing-requests/{id}/confirm")
+    @SecurityRequirement(name = "supabaseBearer")
     @Operation(
-            summary = "차량 화면에서 연결 최종 확인",
+            summary = "모바일 또는 차량 화면에서 연결 최종 확인",
             description =
-                    "호출 주체: 설치된 차량 앱. 정차 상태에서 사용자가 차량 화면의 요청 정보·확인 코드를 직접 확인한 뒤 호출합니다. 서버는 설치 비밀값,"
-                            + " 요청 만료·재사용 여부, 선택 차량과 모바일 사용자의 권한을 다시 검사하고 차량 연결을 한 트랜잭션으로 확정합니다. 이전 활성 연결이 남아있더라도 확인 코드로 새 연결을 승인하면 이전 세션을 안전하게 정리하고 새 연결로 전환합니다.")
+                    "호출 주체: 모바일 앱(Supabase Bearer JWT) 또는 설치된 차량 앱(X-Installation 헤더). 모바일에서 6자리 확인 코드를 입력하거나 차량 화면에서 확인 코드를 직접 확인한 뒤 호출합니다. 확인 코드가 일치하면 즉시 completed로 확정합니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",
@@ -318,13 +318,14 @@ public class PairingController {
                                                         "{\"id\":\"11111111-1111-4111-8111-111111111111\",\"status\":\"completed\",\"expires_at\":\"2026-11-03T03:02:00Z\",\"vehicle_id\":\"22222222-2222-4222-8222-222222222222\",\"approved_user_id\":\"33333333-3333-4333-8333-333333333333\",\"selected_vehicle_name\":\"내"
                                                             + " 차\",\"confirmation_code\":\"583204\"}"))),
         @ApiResponse(responseCode = "400", description = "확인 코드 본문 형식 오류"),
-        @ApiResponse(responseCode = "401", description = "설치 인증 실패"),
+        @ApiResponse(responseCode = "401", description = "인증 실패 (설치 헤더 또는 Supabase Bearer 토큰 필요)"),
         @ApiResponse(responseCode = "403", description = "확인 코드 불일치, 다른 설치의 요청, 사용자 차량 권한 없음"),
         @ApiResponse(responseCode = "404", description = "요청 ID 없음"),
         @ApiResponse(responseCode = "409", description = "대기 중이 아니거나 이미 연결된 요청·차량"),
         @ApiResponse(responseCode = "410", description = "만료된 요청")
     })
     public PairingDtos.Status confirm(
+            @Parameter(hidden = true) @AuthenticationPrincipal Jwt jwt,
             @Parameter(
                             name = "id",
                             in = ParameterIn.PATH,
@@ -336,24 +337,22 @@ public class PairingController {
             @Parameter(
                             name = "X-Installation-Id",
                             in = ParameterIn.HEADER,
-                            required = true,
-                            description = "설치 UUID",
+                            description = "차량 앱 호출 시 필요. 모바일은 Bearer JWT를 사용합니다.",
                             example = "44444444-4444-4444-8444-444444444444")
                     @RequestHeader(value = "X-Installation-Id", required = false)
                     UUID installationId,
             @Parameter(
                             name = "X-Installation-Secret",
                             in = ParameterIn.HEADER,
-                            required = true,
-                            description = "설치 비밀값",
+                            description = "차량 앱 호출 시 필요",
                             example = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
                     @RequestHeader(value = "X-Installation-Secret", required = false)
                     String secret,
             @io.swagger.v3.oas.annotations.parameters.RequestBody(
-                            description = "차량 화면에서 수동 확인한 intent별 비교 코드",
+                            description = "모바일 또는 차량 화면에서 확인한 6자리 비교 코드",
                             required = true,
                             content =
-                                    @Content(
+                                     @Content(
                                             mediaType = "application/json",
                                             schema =
                                                     @Schema(
@@ -367,8 +366,11 @@ public class PairingController {
                     @Valid
                     @RequestBody
                     PairingDtos.ConfirmRequest body) {
-        return service.confirm(
-                actor.requireInstallation(installationId, secret), id, body.confirmation_code());
+        if (installationId != null || secret != null) {
+            return service.confirm(
+                    actor.requireInstallation(installationId, secret), id, body.confirmation_code());
+        }
+        return service.confirmByUser(actor.requireUser(jwt), id, body.confirmation_code());
     }
 
     @GetMapping("/pairing-requests/{id}")

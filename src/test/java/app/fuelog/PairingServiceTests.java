@@ -156,27 +156,39 @@ class PairingServiceTests {
                         .content("{\"proof\":\"" + proof + "\",\"new_vehicle_name\":\"My car\"}"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         String code = JsonPath.read(intentResponse, "$.confirmation_code");
-        mvc.perform(post("/pairing-requests/" + id + "/confirm").header("Authorization", "Bearer user-token")
+        // 인증 헤더(토큰 또는 단말 시크릿)가 없으면 401
+        mvc.perform(post("/pairing-requests/" + id + "/confirm")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmation_code\":\"" + code + "\"}"))
                 .andExpect(status().isUnauthorized());
+
+        // 다른 사용자의 토큰이면 403
+        UUID otherUser = UUID.randomUUID();
+        when(decoder.decode("other-token")).thenReturn(jwt(otherUser));
+        mvc.perform(post("/pairing-requests/" + id + "/confirm").header("Authorization", "Bearer other-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirmation_code\":\"" + code + "\"}"))
+                .andExpect(status().isForbidden());
+
+        // 잘못된 설치 비밀값이면 401
         mvc.perform(post("/pairing-requests/" + id + "/confirm")
                         .header("X-Installation-Id", installationId)
                         .header("X-Installation-Secret", "wrong")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmation_code\":\"" + code + "\"}"))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(post("/pairing-requests/" + id + "/confirm")
-                        .header("X-Installation-Id", installationId)
-                        .header("X-Installation-Secret", secret)
+
+        // 잘못된 확인 코드이면 403
+        mvc.perform(post("/pairing-requests/" + id + "/confirm").header("Authorization", "Bearer user-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmation_code\":\"000000\"}"))
                 .andExpect(status().isForbidden());
+
         mvc.perform(get("/pairing-requests/" + id).header("Authorization", "Bearer user-token"))
                 .andExpect(status().isOk());
-        mvc.perform(post("/pairing-requests/" + id + "/confirm")
-                        .header("X-Installation-Id", installationId)
-                        .header("X-Installation-Secret", secret)
+
+        // 모바일 사용자 토큰과 올바른 6자리 확인 코드로 즉시 completed 승인
+        mvc.perform(post("/pairing-requests/" + id + "/confirm").header("Authorization", "Bearer user-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"confirmation_code\":\"" + code + "\"}"))
                 .andExpect(status().isOk());

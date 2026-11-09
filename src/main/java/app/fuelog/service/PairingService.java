@@ -124,6 +124,13 @@ public class PairingService {
     }
 
     @Transactional
+    public PairingDtos.Status confirmByUser(UUID user, UUID id, String confirmationCode) {
+        PairingRequest request = repository.get(id, true);
+        if (!user.equals(request.approvedUserId())) forbidden();
+        return confirm(request.installationId(), id, confirmationCode);
+    }
+
+    @Transactional
     public PairingDtos.Status confirm(UUID installation, UUID id, String confirmationCode) {
         repository.lockInstallation(installation);
         PairingRequest request = repository.get(id, true);

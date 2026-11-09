@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fuelog-backend:latest
+    container_name: fuelog-backend
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3001}:${SERVER_PORT:-3001}"
+    environment:
+      TZ: ${TZ:-Asia/Seoul}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      SERVER_PORT: ${SERVER_PORT:-3001}
+      DB_URL: ${DB_URL:-jdbc:mariadb://pleos-mariadb:3306/pleos_db}
+      DB_USERNAME: ${DB_USERNAME:-pleos_user}
+      DB_PASSWORD: ${DB_PASSWORD:-pleos_pass_!2026}
+      SUPABASE_URL: ${SUPABASE_URL:-https://ijsklfxyzkepaipzafik.supabase.co}
+    networks:
+      - pleos-network
+
+networks:
+  pleos-network:
+    name: pleos_pleos-network
+    external: true
