@@ -102,7 +102,12 @@ public class ConnectionSettingsService {
 
     @Transactional
     public OperationResult disconnect(String bearer, Disconnect b) {
-        UUID installation = installation(bearer);
+        return disconnect(bearer, null, b);
+    }
+
+    @Transactional
+    public OperationResult disconnect(String bearer, Jwt jwt, Disconnect b) {
+        UUID installation = resolveInstallation(bearer, jwt);
         Operation prior = operation(installation, b.operationId());
         if (prior != null) {
             if (!prior.kind().equals(b.kind().name()))
@@ -142,6 +147,34 @@ public class ConnectionSettingsService {
             // Retain the physical vehicle so shared maintenance remains readable without a user.
         }
         return new OperationResult(b.operationId(), state);
+    }
+
+    private UUID resolveInstallation(String bearer, Jwt jwt) {
+        if (bearer != null && bearer.startsWith("Bearer ")) {
+            String encoded = bearer.substring(7);
+            if (encoded.matches("[A-Za-z0-9_-]{43,}")) {
+                try {
+                    return installation(bearer);
+                } catch (ResponseStatusException ex) {
+                    if (jwt == null) throw ex;
+                }
+            }
+        }
+        if (jwt != null) {
+            UUID user = actor.requireUser(jwt);
+            List<String> list = db.query(
+                    "SELECT i.id FROM vehicle_installations i JOIN group_members m ON m.vehicle_id = i.vehicle_id AND m.user_id = ? ORDER BY i.updated_at DESC LIMIT 1",
+                    (rs, n) -> rs.getString(1),
+                    user.toString());
+            if (!list.isEmpty()) {
+                UUID id = UUID.fromString(list.getFirst());
+                pairing.lockInstallation(id);
+                return id;
+            }
+            fail(HttpStatus.NOT_FOUND, "INSTALLATION_NOT_FOUND");
+        }
+        fail(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED");
+        return null;
     }
 
     @Transactional(readOnly = true)

@@ -77,10 +77,17 @@ public class PairingService {
         PairingRequest request = repository.get(body.request_id(), false);
         // 완료된 QR은 새 권한을 발급하지 않고 현재 연결된 본인의 로그인 상태만 반환한다.
         if (isCurrentPairing(request, user))
-            return new PairingDtos.Preview(request.id(), request.expiresAt(), "completed", request.selectedVehicleId());
+            return new PairingDtos.Preview(
+                    request.id(),
+                    request.expiresAt(),
+                    "completed",
+                    request.selectedVehicleId(),
+                    repository.vehicleName(request.selectedVehicleId()));
         requirePending(request);
         requireProof(request, body.proof());
-        return new PairingDtos.Preview(request.id(), request.expiresAt(), "pending", null);
+        UUID known = repository.linkedVehicle(request.installationId());
+        String vehicleName = known != null ? repository.vehicleName(known) : null;
+        return new PairingDtos.Preview(request.id(), request.expiresAt(), "pending", known, vehicleName);
     }
 
     @Transactional
@@ -131,11 +138,22 @@ public class PairingService {
                         request.confirmationCode()
                                 .getBytes(java.nio.charset.StandardCharsets.US_ASCII))) forbidden();
         UUID knownVehicle = repository.linkedVehicle(installation);
-        if (knownVehicle != null && !knownVehicle.equals(request.selectedVehicleId()))
-            conflict("Existing vehicle must be selected; reset registration to change vehicles");
-        if (access.currentUser(installation) != null) conflict("Installation already paired");
+        if (knownVehicle != null && !knownVehicle.equals(request.selectedVehicleId())) {
+            if (request.selectedVehicleId() == null
+                    && repository.userManagesVehicle(request.approvedUserId(), knownVehicle)) {
+                // 모바일에서 새 차량으로 요청했으나 단말에 이미 매핑된 차량이 있고 사용자가 관리자이면 기존 차량 유지
+            } else {
+                conflict("Existing vehicle must be selected; reset registration to change vehicles");
+            }
+        }
 
-        UUID vehicle = request.selectedVehicleId();
+        // 차량 단말에서 6자리 확인 코드를 확인하고 승인(confirm)했으므로,
+        // 이전 연결(세션/요청)이 남아있다면 안전하게 정리하고 새 연결로 전환한다.
+        if (access.currentUser(installation) != null) {
+            repository.revokeForReset(installation, Instant.now());
+        }
+
+        UUID vehicle = request.selectedVehicleId() != null ? request.selectedVehicleId() : knownVehicle;
         Instant now = Instant.now();
         if (vehicle != null) {
             requireManager(request.approvedUserId(), vehicle);
@@ -146,9 +164,14 @@ public class PairingService {
             repository.createVehicle(
                     vehicle, id, request.approvedUserId(), request.newVehicleName(), now);
         }
-        if (knownVehicle == null) {
-            if (!repository.linkInstallation(installation, vehicle, now)) conflict("Installation already paired");
-        } else repository.resumeInstallation(installation, now);
+
+        try {
+            if (knownVehicle == null) {
+                if (!repository.linkInstallation(installation, vehicle, now)) conflict("Installation already paired");
+            } else repository.resumeInstallation(installation, now);
+        } catch (org.springframework.dao.DataIntegrityViolationException ex) {
+            conflict("Vehicle already linked to another installation");
+        }
         repository.complete(id, vehicle, now);
         return view(repository.get(id, false));
     }

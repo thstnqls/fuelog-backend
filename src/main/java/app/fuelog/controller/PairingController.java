@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,11 @@ public class PairingController {
     public PairingController(PairingService service, PairingActor actor) {
         this.service = service;
         this.actor = actor;
+    }
+
+    @ModelAttribute
+    void noStore(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
     }
 
     @PostMapping("/installations")
@@ -165,7 +171,7 @@ public class PairingController {
             summary = "모바일 QR 미리보기·검증",
             description =
                     "호출 주체: Supabase에 로그인한 휴대폰 사용자(익명 계정 제외). QR의 request_id와 proof를 HTTPS 요청 본문으로"
-                            + " 보내 유효성을 확인합니다. 미승인 요청은 status=pending이므로 기존 차량 선택·확인 절차를 진행하세요.\n\n"
+                            + " 보내 유효성을 확인합니다. 미승인 요청은 status=pending을 반환하며, 해당 설치에 이미 등록된 차량이 있다면 vehicle_id와 vehicle_name을 함께 반환합니다.\n\n"
                             + "현재 연결된 동일 계정·설치·차량의 완료 요청이면 status=completed와 vehicle_id를 반환합니다. 모바일은 추가 승인 화면 없이 로그인 완료로 이동하세요. 완료된 QR의 만료 시각과 무관하게 기존 로그인 상태만 확인하며, 해제·사용자 변경·멤버십 철회된 권한은 복구하지 않습니다.")
     @ApiResponses({
         @ApiResponse(
@@ -175,10 +181,16 @@ public class PairingController {
                         @Content(
                                 mediaType = "application/json",
                                 schema = @Schema(implementation = PairingDtos.Preview.class),
-                                examples =
-                                        @ExampleObject(
-                                                value =
-                                                        "{\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"expires_at\":\"2026-11-03T03:02:00Z\",\"status\":\"pending\",\"vehicle_id\":null}"))),
+                                examples = {
+                                    @ExampleObject(
+                                            name = "신규 설치",
+                                            value =
+                                                    "{\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"expires_at\":\"2026-11-03T03:02:00Z\",\"status\":\"pending\",\"vehicle_id\":null,\"vehicle_name\":null}"),
+                                    @ExampleObject(
+                                            name = "기존 차량 매핑 단말",
+                                            value =
+                                                    "{\"request_id\":\"11111111-1111-4111-8111-111111111111\",\"expires_at\":\"2026-11-03T03:02:00Z\",\"status\":\"pending\",\"vehicle_id\":\"22222222-2222-4222-8222-222222222222\",\"vehicle_name\":\"내 차\"}")
+                                })),
         @ApiResponse(responseCode = "400", description = "요청 본문 형식 오류"),
         @ApiResponse(responseCode = "401", description = "Supabase 로그인 토큰 없음·무효"),
         @ApiResponse(responseCode = "403", description = "proof 불일치 또는 익명 사용자"),
@@ -291,7 +303,7 @@ public class PairingController {
             summary = "차량 화면에서 연결 최종 확인",
             description =
                     "호출 주체: 설치된 차량 앱. 정차 상태에서 사용자가 차량 화면의 요청 정보·확인 코드를 직접 확인한 뒤 호출합니다. 서버는 설치 비밀값,"
-                            + " 요청 만료·재사용 여부, 선택 차량과 모바일 사용자의 권한을 다시 검사하고 차량 연결을 한 트랜잭션으로 확정합니다.")
+                            + " 요청 만료·재사용 여부, 선택 차량과 모바일 사용자의 권한을 다시 검사하고 차량 연결을 한 트랜잭션으로 확정합니다. 이전 활성 연결이 남아있더라도 확인 코드로 새 연결을 승인하면 이전 세션을 안전하게 정리하고 새 연결로 전환합니다.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",

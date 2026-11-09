@@ -210,6 +210,31 @@ public class PairingRepository {
                 .isEmpty();
     }
 
+    public boolean isGroupMember(UUID user, UUID vehicle) {
+        return !db.query(
+                        "SELECT user_id FROM group_members WHERE vehicle_id=? AND user_id=?",
+                        (rs, n) -> rs.getString(1),
+                        vehicle.toString(),
+                        user.toString())
+                .isEmpty();
+    }
+
+    public void addMember(UUID vehicle, UUID user, String role, Instant now) {
+        db.update(
+                "INSERT INTO group_members (vehicle_id, user_id, role, created_at) VALUES (?,?,?,?)",
+                vehicle.toString(),
+                user.toString(),
+                role,
+                time(now));
+    }
+
+    public void promoteToManager(UUID user, UUID vehicle) {
+        db.update(
+                "UPDATE group_members SET role='MANAGER' WHERE vehicle_id=? AND user_id=?",
+                vehicle.toString(),
+                user.toString());
+    }
+
     public String vehicleName(UUID vehicle) {
         List<String> rows =
                 db.query(

@@ -99,7 +99,12 @@ public final class PairingDtos {
             @Schema(description = "서버 기준 요청 만료 시각(UTC)", example = "2026-11-03T03:02:00Z")
                     Instant expires_at,
             @Schema(description = "pending이면 차량 선택·확인 진행, completed이면 기존 로그인 유지 중.", allowableValues = {"pending", "completed"}) String status,
-            @Schema(description = "completed일 때 현재 연결 차량 UUID. pending이면 null.") UUID vehicle_id) {}
+            @Schema(description = "completed 또는 단말에 이미 매핑된 차량이 있을 때 차량 UUID.", example = "22222222-2222-4222-8222-222222222222") UUID vehicle_id,
+            @Schema(description = "단말에 이미 매핑된 차량 이름", example = "내 차") String vehicle_name) {
+        public Preview(UUID request_id, Instant expires_at, String status, UUID vehicle_id) {
+            this(request_id, expires_at, status, vehicle_id, null);
+        }
+    }
 
     @Schema(
             name = "PairingIntentRequest",

@@ -52,17 +52,19 @@ public class ConnectionSettingsController {
 
     @PostMapping("/connection/disconnect")
     @SecurityRequirement(name = "installationBearer")
+    @SecurityRequirement(name = "supabaseBearer")
     @Operation(
             summary = "사용자 연결 해제 또는 차량 초기화 요청",
             description =
-                    "장치의 설치 Bearer로 kind와 operationId를 보냅니다. USER는 사용자 권한과 완료된 페어링을 폐기하되 차량 등록·공동 정비·기존 기록을 유지하고 COMPLETED,"
+                    "장치의 설치 Bearer 또는 모바일 Supabase JWT로 kind와 operationId를 보냅니다. USER는 사용자 권한과 완료된 페어링을 폐기하되 차량 등록·공동 정비·기존 기록을 유지하고 COMPLETED,"
                         + " VEHICLE은 사용자 권한을 차단하고 관리자 승인 대기인 AWAITING_ADMIN을 반환합니다.\n\n"
                         + "같은 operationId는 최초 요청 대상에 고정되며 다른 kind로 재사용하면 409입니다. 운행·주유·정비 기록의 소유권과"
                         + " 설치 비밀값은 보존합니다.")
     public OperationResult disconnect(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestHeader(value = "Authorization", required = false) String bearer,
             @Valid @RequestBody Disconnect b) {
-        return service.disconnect(bearer, b);
+        return service.disconnect(bearer, jwt, b);
     }
 
     @PutMapping("/installation/capabilities")
