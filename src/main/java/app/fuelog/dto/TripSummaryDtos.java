@@ -45,13 +45,13 @@ public final class TripSummaryDtos {
             @Schema(description = "운행 중 주유가 있었는지 여부. true이면 연료 차이로 소비량을 계산하지 않습니다.") @NotNull
                     Boolean refueled,
             @Schema(description = "운행 중 사용자가 변경되었는지 여부.") @NotNull Boolean ownerChanged,
-            @Schema(description = "연료 1L당 가격. 모르면 null과 priceValid=false를 보냅니다.")
+            @Schema(description = "내연기관은 원/L, EV는 원/kWh 단가. 모르면 null과 priceValid=false를 보냅니다.")
                     @DecimalMin("0")
                     @Digits(integer = 9, fraction = 3)
                     BigDecimal unitPrice,
             @Schema(description = "ISO 4217 통화 코드. 예: KRW.") @Pattern(regexp = "[A-Z]{3}")
                     String currency,
-            @Schema(description = "연료 단가의 확인 출처.") @Size(max = 200) String priceSource,
+            @Schema(description = "연료·전력 단가의 확인 출처.") @Size(max = 200) String priceSource,
             @Schema(description = "단가를 확인한 UTC 시각. 운행 종료 시각 이후일 수 없습니다.") Instant priceObservedAt,
             @Schema(description = "단가와 출처·통화·확인 시각이 유효한지 여부.") @NotNull Boolean priceValid,
             @jakarta.validation.Valid Ev ev) {

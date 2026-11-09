@@ -202,6 +202,21 @@ class TripSummaryTests {
     }
 
     @Test
+    void electricCostUsesEnergyAndPreservesMissingPriceAndChargingGuards() {
+        Upload base = new Upload(trip, 1L, "manual_app", null, start, end, false,
+                new BigDecimal("60"), true, null, null, false, false, false, false,
+                new BigDecimal("350"), "KRW", "confirmed-charge:reference", start.minusSeconds(60), true,
+                new Ev(true, true, false, false, new BigDecimal("4")));
+        Summary result = TripSummaryService.calculate(base, Instant.now());
+        assertEquals(0, new BigDecimal("4").compareTo(result.energyConsumedKwh().value()));
+        assertEquals(0, new BigDecimal("15").compareTo(result.energyEfficiencyKmPerKwh().value()));
+        assertEquals(0, new BigDecimal("1400").compareTo(result.estimatedCost().value()));
+        assertNull(result.fuelConsumedLiters().value());
+        assertNull(TripSummaryService.calculate(change(base, "\"priceValid\":true", "\"priceValid\":false"), Instant.now()).estimatedCost().value());
+        assertNull(TripSummaryService.calculate(change(base, "\"chargedDuringInterval\":false", "\"chargedDuringInterval\":true"), Instant.now()).estimatedCost().value());
+    }
+
+    @Test
     void httpValidatesInputAndRequiresAuthentication() throws Exception {
         mvc.perform(put("/recording-intervals/" + trip).header("Authorization", bearer)
                         .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(body(1, consent))))

@@ -384,7 +384,15 @@ public class TripSummaryService {
                         efficiency == null
                                 ? (reason == null ? "invalid_or_missing_distance" : reason)
                                 : null);
-        String costReason = reason;
+        Ev ev=b.ev();
+        String evReason=ev==null || !ev.detected() || !ev.endpointsValid() ? "invalid_or_missing_battery_endpoints"
+                : ev.missing() || b.missing() || b.endEstimated() ? "missing_recording"
+                : b.ownerChanged() ? "owner_changed" : ev.chargedDuringInterval() ? "charged_during_interval"
+                : ev.consumedKwh()==null || ev.consumedKwh().signum()<=0 ? "non_positive_consumption" : null;
+        BigDecimal energy=evReason==null?ev.consumedKwh():null;
+        BigDecimal evEconomy=energy!=null && distanceOk?b.distanceKm().divide(energy,3,RoundingMode.HALF_UP):null;
+        boolean electric = ev != null && ev.detected();
+        String costReason = electric ? evReason : reason;
         if (costReason == null && !distanceOk) costReason = "invalid_or_missing_distance";
         if (costReason == null
                 && (!b.priceValid()
@@ -398,15 +406,8 @@ public class TripSummaryService {
             costReason = "invalid_or_missing_price";
         BigDecimal cost =
                 costReason == null
-                        ? consumed.multiply(b.unitPrice()).setScale(2, RoundingMode.HALF_UP)
+                        ? (electric ? energy : consumed).multiply(b.unitPrice()).setScale(2, RoundingMode.HALF_UP)
                         : null;
-        Ev ev=b.ev();
-        String evReason=ev==null || !ev.detected() || !ev.endpointsValid() ? "invalid_or_missing_battery_endpoints"
-                : ev.missing() || b.missing() || b.endEstimated() ? "missing_recording"
-                : b.ownerChanged() ? "owner_changed" : ev.chargedDuringInterval() ? "charged_during_interval"
-                : ev.consumedKwh()==null || ev.consumedKwh().signum()<=0 ? "non_positive_consumption" : null;
-        BigDecimal energy=evReason==null?ev.consumedKwh():null;
-        BigDecimal evEconomy=energy!=null && distanceOk?b.distanceKm().divide(energy,3,RoundingMode.HALF_UP):null;
         return new Summary(
                 b.tripId(),
                 b.revision(),
