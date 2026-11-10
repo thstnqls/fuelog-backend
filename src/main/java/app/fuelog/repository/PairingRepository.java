@@ -244,6 +244,17 @@ public class PairingRepository {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
+    /** 현재 사용자·차량에 완료된 연결의 모바일 입력 이름만 반환한다. 승인 대기·이전 사용자는 제외한다. */
+    public String connectionAlias(UUID installation, UUID vehicle, UUID user) {
+        var rows = db.query(
+                "SELECT new_vehicle_name FROM pairing_requests WHERE installation_id=?"
+                        + " AND selected_vehicle_id=? AND approved_user_id=? AND status='completed'"
+                        + " ORDER BY updated_at DESC,id DESC LIMIT 1",
+                (rs, n) -> rs.getString(1), installation.toString(), vehicle.toString(), user.toString());
+        String alias = rows.isEmpty() ? null : rows.getFirst();
+        return alias == null || alias.isBlank() ? null : alias.trim();
+    }
+
     public void createVehicle(UUID vehicle, UUID request, UUID user, String name, Instant now) {
         db.update(
                 "INSERT INTO vehicles (id, name, created_by, source_request_id, created_at,"

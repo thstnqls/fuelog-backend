@@ -49,7 +49,9 @@ public final class VehicleHomeDtos {
             DataStatus fuelReviewStatus,
             Integer maintenanceDueCount,
             DataStatus maintenanceStatus,
-            Instant generatedAt) {}
+            Instant generatedAt,
+            @Schema(description = "현재 연결 사용자가 모바일 연결 요청의 new_vehicle_name에 입력한 별칭. 입력값이 없으면 차량명, 사용자 미연결·해제 시 null.", example = "서빈의 출퇴근 차", nullable = true)
+            String connectionAlias) {}
 
     @Schema(name = "VehicleHomeMoney")
     public record Money(

@@ -46,7 +46,9 @@ public class VehicleHomeController {
             summary = "차량 홈 조회",
             description =
                     "장치의 설치 Bearer로 마지막 QR 인증 사용자의 개인 홈을 조회합니다. 추가 구간 QR은 필요하지 않습니다. 인증된 사용자가 없으면 개인 값은 null, 상태는 needs_user_proof입니다. 세션이 무효해 401/403이 반환되면"
-                        + " 앱의 개인 캐시를 삭제하세요. 거리 단위는 km, 문자열 시각은 UTC입니다.")
+                        + " 앱의 개인 캐시를 삭제하세요. 거리 단위는 km, 문자열 시각은 UTC입니다.\n\n"
+                        + "vehicleAlias는 저장된 차량명, connectionAlias는 현재 사용자가 모바일 연결 요청의 new_vehicle_name에 입력한 연결 별칭입니다. "
+                        + "별칭이 없으면 차량명을 반환하고 사용자 미연결·해제 시 connectionAlias는 null입니다. 메인 홈의 연결 표시에는 connectionAlias를 사용하세요.")
     @ApiResponses({
         @ApiResponse(
                 responseCode = "200",

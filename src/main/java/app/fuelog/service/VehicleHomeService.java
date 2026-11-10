@@ -220,6 +220,8 @@ public class VehicleHomeService {
         UUID user = session == null ? access.currentUser(installation.id()) : session.userId();
         UUID vehicleId = linkedVehicle(installation.id());
         var vehicle = repository.vehicle(vehicleId);
+        String connectionAlias = user == null ? null : pairing.connectionAlias(installation.id(), vehicleId, user);
+        if (user != null && connectionAlias == null) connectionAlias = vehicle.alias();
         Interval latest =
                 repository.latestIntervalForUser(
                         installation.id(), vehicleId, user);
@@ -271,7 +273,8 @@ public class VehicleHomeService {
                 privateUnavailable,
                 null,
                 privateUnavailable,
-                now);
+                now,
+                connectionAlias);
     }
 
     @Transactional
