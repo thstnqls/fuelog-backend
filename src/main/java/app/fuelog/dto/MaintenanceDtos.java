@@ -30,6 +30,23 @@ public final class MaintenanceDtos {
         ERROR
     }
 
+    public enum RiskLevel {
+        UNKNOWN, NORMAL, OVERDUE, DANGER
+    }
+
+    public enum PlanStatus {
+        ACTIVE, INACTIVE, COMPLETE
+    }
+
+    @Schema(name = "MaintenanceCompletionInput")
+    public record CompletionInput(
+            @NotNull @AssertTrue @Schema(description = "실제 정비 이행을 사용자가 확인했을 때만 true.") Boolean confirmed,
+            @NotNull LocalDate serviceDate,
+            @DecimalMin("0") @Digits(integer = 9, fraction = 3)
+            @Schema(description = "정비 당시 누적거리. 거리 주기가 있으면 필수.") BigDecimal odometerKm) {}
+
+    public record Completion(Event event, Plan completedPlan, Plan nextPlan) {}
+
     @Schema(name = "MaintenanceOdometerInput")
     public record OdometerInput(
             @Schema(description = "차량 전체 누적거리(km). VALID일 때 필수, ERROR/UNSUPPORTED이면 null.")
@@ -71,7 +88,8 @@ public final class MaintenanceDtos {
             Boolean distanceDue,
             BigDecimal remainingKm,
             @Schema(description = "차량 공용 정비 반복 주기(km). 기간 기준만 있으면 null.") BigDecimal intervalKm,
-            @Schema(description = "차량 공용 정비 반복 주기(개월). 거리 기준만 있으면 null.") Integer intervalMonths) {}
+            @Schema(description = "차량 공용 정비 반복 주기(개월). 거리 기준만 있으면 null.") Integer intervalMonths,
+            @Schema(description = "UNKNOWN=판단 자료 없음, NORMAL=미도래, OVERDUE=도래, DANGER=주기 50% 이상 초과. 날짜·거리 중 높은 위험도.") RiskLevel riskLevel) {}
 
     @Schema(name = "MaintenanceSummary")
     public record Summary(
@@ -126,7 +144,12 @@ public final class MaintenanceDtos {
             LocalDate lastServiceDate,
             BigDecimal lastServiceKm,
             LocalDate nextDueDate,
-            BigDecimal nextDueKm) {}
+            BigDecimal nextDueKm,
+            Instant completedAt,
+            Instant deletedAt,
+            UUID nextPlanId,
+            PlanStatus status,
+            RiskLevel riskLevel) {}
 
     @Schema(name = "MaintenancePlans")
     public record Plans(List<Plan> items) {}

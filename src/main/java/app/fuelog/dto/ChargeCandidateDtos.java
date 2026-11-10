@@ -17,7 +17,14 @@ public final class ChargeCandidateDtos {
             @DecimalMin("-180") @DecimalMax("180") @NotNull Double longitude,
             @NotNull Instant measuredAt, @NotNull Instant receivedAt,
             @NotBlank @Pattern(regexp="PLEOS_CURRENT_UPDATE") String source) {}
-    public record ComparedStation(String stationId, String name, String operatorId, double distanceMeters,
+    public record ReferenceLocation(
+            @DecimalMin("-90") @DecimalMax("90") @NotNull Double latitude,
+            @DecimalMin("-180") @DecimalMax("180") @NotNull Double longitude,
+            @NotNull Instant measuredAt, @NotNull Instant receivedAt,
+            @NotBlank @Pattern(regexp="PLEOS_CURRENT_UPDATE") String source) {}
+    public record TripReference(UUID tripId, UUID owner, Instant fetchedAt, String estimateStatus, List<ReferenceRate> scenarios) {}
+    public record ReferenceRate(String powerBand, String basis, BigDecimal averageWonPerKwh, List<ComparedStation> stations) {}
+    public record ComparedStation(String stationId, String name, String address, String operatorId, double distanceMeters,
             BigDecimal connectorKw, BigDecimal wonPerKwh, String tariffVersion, String sourceUrl,
             String sourceUpdatedAt, Instant verifiedAt) {}
     public record Scenario(String powerBand, String basis, BigDecimal averageWonPerKwh,

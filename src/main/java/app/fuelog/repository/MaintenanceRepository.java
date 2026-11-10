@@ -36,7 +36,11 @@ public class MaintenanceRepository {
             LocalDate lastDate,
             BigDecimal lastKm,
             LocalDate dueDate,
-            BigDecimal dueKm) {}
+            BigDecimal dueKm,
+            Instant completedAt,
+            Instant deletedAt,
+            UUID completionEvent,
+            UUID nextPlan) {}
 
     public record EventRow(
             UUID id,
@@ -70,7 +74,11 @@ public class MaintenanceRepository {
                             r.getObject("last_service_date", LocalDate.class),
                             r.getBigDecimal("last_service_km"),
                             r.getObject("next_due_date", LocalDate.class),
-                            r.getBigDecimal("next_due_km"));
+                            r.getBigDecimal("next_due_km"),
+                            instant(r.getObject("completed_at", LocalDateTime.class)),
+                            instant(r.getObject("deleted_at", LocalDateTime.class)),
+                            id(r.getString("completion_event_id")),
+                            id(r.getString("next_plan_id")));
     private final RowMapper<EventRow> eventMapper =
             (r, n) ->
                     new EventRow(
@@ -213,6 +221,17 @@ public class MaintenanceRepository {
                 item.toString());
     }
 
+    public void completePlan(UUID item, UUID event, UUID next, Instant now) {
+        db.update("UPDATE maintenance_plans SET active=FALSE,completed_at=?,deleted_at=?,"
+                        + "completion_event_id=?,next_plan_id=?,revision=revision+1,updated_at=? WHERE id=?",
+                time(now), time(now), event.toString(), next.toString(), time(now), item.toString());
+    }
+
+    public boolean completionEvent(UUID event) {
+        return !db.query("SELECT id FROM maintenance_plans WHERE completion_event_id=?",
+                (r, n) -> r.getString(1), event.toString()).isEmpty();
+    }
+
     public Evidence evidence(
             UUID vehicle, UUID evidence, String name, BigDecimal km, Integer months) {
         if (evidence == null) return null;
@@ -290,10 +309,12 @@ public class MaintenanceRepository {
 
     public List<EventRow> itemEvents(UUID vehicle, UUID item) {
         return db.query(
-                "SELECT * FROM maintenance_events WHERE vehicle_id=? AND item_id=? AND deleted_at"
-                        + " IS NULL AND status='CONFIRMED'",
+                "SELECT * FROM maintenance_events WHERE vehicle_id=? AND (item_id=? OR id IN"
+                        + " (SELECT completion_event_id FROM maintenance_plans WHERE next_plan_id=?))"
+                        + " AND deleted_at IS NULL AND status='CONFIRMED'",
                 eventMapper,
                 vehicle.toString(),
+                item.toString(),
                 item.toString());
     }
 

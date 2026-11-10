@@ -113,6 +113,20 @@ public class MobileMaintenanceController {
         return result;
     }
 
+    @PostMapping("/maintenance-plans/{itemId}/complete")
+    @Operation(summary = "사용자 정비 완료 확인 및 다음 회차 생성",
+            description = "실제 정비를 사용자가 확인한 경우 confirmed=true, serviceDate를 보냅니다. 거리 주기가 있으면 odometerKm도 필수입니다. "
+                    + "현재 계획 revision의 If-Match와 재시도에 유지할 Idempotency-Key가 필요합니다. 공동 계획은 OWNER, 개인 계획은 소유자만 완료합니다. "
+                    + "기존 계획은 completedAt/deletedAt을 기록해 비활성화하고 동일 이름·주기의 새 UUID 계획을 생성합니다. "
+                    + "완료 확인 이력은 수정·삭제할 수 없습니다(409). 같은 키·본문 재시도는 같은 완료 이력과 다음 계획 ID를 반환합니다.")
+    public Completion complete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID vehicleId,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @Valid @RequestBody CompletionInput body) {
+        return service.complete(actor.requireUser(jwt), vehicleId, itemId, ifMatch, key, body);
+    }
+
     @PatchMapping("/maintenance-events/{eventId}")
     @Operation(
             summary = "내 정비 기록 일부 수정",
@@ -180,7 +194,7 @@ public class MobileMaintenanceController {
             summary = "정비 주기·근거 목록 조회",
             description =
                     "모바일의 Supabase JWT와 차량 멤버십이 필요합니다. 공동 계획과 본인 개인 계획을 반환합니다.\n\n"
-                        + "과거 이력 연결을 위해 비활성 계획도 포함합니다. 제조사 기준 계획은 근거 문서·차종·연식·적용 범위와 현재 검증 여부를 함께"
+                        + "일반 비활성 계획도 포함하되 완료 후 논리 삭제된 계획은 제외합니다. 제조사 기준 계획은 근거 문서·차종·연식·적용 범위와 현재 검증 여부를 함께"
                         + " 반환합니다.")
     @ApiResponse(
             responseCode = "200",

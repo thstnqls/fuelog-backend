@@ -167,6 +167,16 @@ class TripSummaryTests {
     }
 
     @Test
+    void firstOdometerBaselineIsNotAMissingRecording() {
+        db.update("INSERT INTO recording_samples (interval_id,sequence,batch_id,observed_at,missing_reason,fuel_status,received_at) VALUES (?,1,'baseline',?,'baseline_required','unsupported',CURRENT_TIMESTAMP)",
+                interval.toString(), TimeUtils.toLocalDateTime(start.plusSeconds(1)));
+        service.upload(bearer, trip, body(1, null));
+        assertFalse(service.summary(bearer, trip, null).quality().missing());
+        db.update("UPDATE recording_samples SET sequence=2 WHERE interval_id=?", interval.toString());
+        assertStatus(409, () -> service.upload(bearer, trip, body(2, null)));
+    }
+
+    @Test
     void missingSamplesCannotBeReportedAsComplete() {
         db.update("INSERT INTO recording_samples (interval_id,sequence,batch_id,observed_at,missing_reason,fuel_status,received_at) VALUES (?,1,'missing',?,'odometer_reset','unsupported',CURRENT_TIMESTAMP)",
                 interval.toString(), TimeUtils.toLocalDateTime(start.plusSeconds(1)));

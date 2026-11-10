@@ -85,7 +85,7 @@ public class TripSummaryService {
             Integer missingSamples =
                     db.queryForObject(
                             "SELECT COUNT(*) FROM recording_samples WHERE interval_id=? AND"
-                                    + " missing_reason IS NOT NULL",
+                                    + " missing_reason IS NOT NULL AND NOT (sequence=1 AND missing_reason='baseline_required')",
                             Integer.class,
                             interval.id().toString());
             if (missingSamples != null && missingSamples > 0 && !body.missing())

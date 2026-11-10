@@ -58,6 +58,24 @@ public class ChargeCandidateService {
             ChargingEstimateService.reprice(p.scenarios(),b.estimatedKwh()),p.correctedKwh(),p.correctedAmount(),p.correctedPlace()));
     }
     @Transactional
+    public TripReference tripReference(String bearer, UUID tripId, ReferenceLocation b) {
+        UUID installation = installation(bearer);
+        var interval = home.intervalByTripId(installation, tripId);
+        UUID user = access.currentUser(installation);
+        if (interval == null || !interval.vehicleId().equals(pairing.linkedVehicle(installation))
+                || user == null || !user.equals(interval.userId())) fail(403, "TRIP_REFERENCE_ACCESS_DENIED");
+        Instant now = Instant.now();
+        if (!Double.isFinite(b.latitude()) || !Double.isFinite(b.longitude()) || Math.abs(b.latitude()) > 90 || Math.abs(b.longitude()) > 180
+                || b.measuredAt().isAfter(b.receivedAt()) || b.receivedAt().isAfter(now.plusSeconds(5))
+                || b.measuredAt().isBefore(now.minusSeconds(30))
+                || b.receivedAt().isAfter(b.measuredAt().plusSeconds(10))) fail(400, "INVALID_LOCATION_EVIDENCE");
+        var scenarios = "WGS84".equals(coordinateSystem)
+                ? estimates.estimate(b.latitude(), b.longitude(), java.math.BigDecimal.ONE, now) : List.<Scenario>of();
+        return new TripReference(tripId, user, now, !"WGS84".equals(coordinateSystem) ? "COORDINATE_SYSTEM_UNVERIFIED"
+                : scenarios.isEmpty() ? "INSUFFICIENT_COMPARABLE_STATIONS" : "CURRENT_LOCATION_REFERENCE", scenarios.stream().map(s -> new ReferenceRate(s.powerBand(), s.basis(), s.averageWonPerKwh(), s.stations())).toList());
+    }
+
+    @Transactional
     public View detailDevice(String bearer,UUID id) { return device(bearer,id).view; }
     @Transactional
     public View estimate(String bearer,UUID id,Location b) {

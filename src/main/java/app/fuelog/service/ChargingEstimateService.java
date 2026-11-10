@@ -34,7 +34,7 @@ public class ChargingEstimateService {
         Map<String,Tariff> byKey=new HashMap<>();
         for(var t:tariffs) byKey.putIfAbsent(t.operator+":"+t.band,t);
         var stations=db.query("SELECT * FROM charger_catalog WHERE observed_at>=? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
-            (r,n)->new Charger(r.getString("station_id"),r.getString("station_name"),r.getString("operator_id"),r.getDouble("latitude"),r.getDouble("longitude"),r.getBigDecimal("connector_kw")),
+            (r,n)->new Charger(r.getString("station_id"),r.getString("station_name"),r.getString("address"),r.getString("operator_id"),r.getDouble("latitude"),r.getDouble("longitude"),r.getBigDecimal("connector_kw")),
             time(now.minusSeconds(86400)),lat-.05,lat+.05,lon-.06,lon+.06);
         List<Scenario> result=new ArrayList<>();
         for(String band:List.of("SLOW","MEDIUM","FAST_50","FAST_100","ULTRA")) {
@@ -43,7 +43,7 @@ public class ChargingEstimateService {
                 var t=byKey.get(s.operator+":"+band);
                 double meters=distance(lat,lon,s.lat,s.lon);
                 if(t==null || !band.equals(powerBand(s.kw)) || meters>3000) continue;
-                priced.add(new ComparedStation(s.id,s.name,s.operator,Math.round(meters*10)/10.0,s.kw,t.price,t.version,t.url,t.updated,t.verified));
+                priced.add(new ComparedStation(s.id,s.name,s.address,s.operator,Math.round(meters*10)/10.0,s.kw,t.price,t.version,t.url,t.updated,t.verified));
             }
             priced.sort(Comparator.comparingDouble(ComparedStation::distanceMeters).thenComparing(ComparedStation::stationId));
             var local=select(priced,1000);
@@ -66,6 +66,6 @@ public class ChargingEstimateService {
                 kwh.multiply(s.averageWonPerKwh()).setScale(0,RoundingMode.HALF_UP),s.stations())).toList();
     }
     private record Tariff(String operator,String band,BigDecimal price,String version,String url,String updated,Instant verified) {}
-    private record Charger(String id,String name,String operator,double lat,double lon,BigDecimal kw) {}
+    private record Charger(String id,String name,String address,String operator,double lat,double lon,BigDecimal kw) {}
     private static LocalDateTime time(Instant t) { return LocalDateTime.ofInstant(t,ZoneOffset.UTC); }
 }

@@ -80,3 +80,23 @@ Supabase 로그인 JWT와 후보 소유자·현재 차량 멤버십이 필요하
 ## C04 운행 업로드
 
 기존 `PUT /recording-intervals/{id}`에 선택적인 `ev:{detected,endpointsValid,missing,chargedDuringInterval,consumedKwh}`를 추가한다. 거리와 독립적으로 EV 끝점·누락·사용자 변경을 검사한다. `GET .../summary`는 `energyConsumedKwh`, `energyEfficiencyKmPerKwh` metric을 추가 반환한다. 충전 후보의 수명과 재시도는 별도 API에서 처리한다. 과거 연료 DTO 생성자·기존 클라이언트 호환성을 유지한다.
+
+
+## C04 현재 조회 위치의 운행 전력비 참고요금
+
+POST `/recording-intervals/{tripId}/charging-reference`는 차량 설치 Bearer를 사용한다. 같은 차량·현재 인증 사용자에게 귀속된 운행만 조회 가능하다. 본문은 `latitude`, `longitude`, `measuredAt`, `receivedAt`, `source=PLEOS_CURRENT_UPDATE`이다. 측정 시각은 요청 시점 30초 이내, 수신은 측정 후 10초 이내여야 한다. 응답은 `tripId`, `owner`, `fetchedAt`, `estimateStatus`, `scenarios[{powerBand,basis,averageWonPerKwh,stations}]`이다. 원시 좌표를 응답·DB·로그에 남기지 않는다.
+
+과거 충전 후보 없이 정차 중 명시적 조회로 참고요금을 받을 수 있다. 이 결과는 조회 위치의 참고 단가이며 실제 충전 위치·결제단가나 과거 운행의 확정 가격으로 저장하지 않는다. 차량은 유효한 소모 kWh에 단가를 곱해 출력 구간별 참고 전력비를 표시한다. 원래 운행 요약 비용과는 구분한다. 좌표계 검증·최신 카탈로그·유효 요금표·서로 다른 2~3개 사업자 조건은 기존 충전 추정과 같다.
+
+
+## 위치·주소 표시와 일반 주유소 조회
+
+V16은 charger_catalog.address를 추가한다. getChargerInfo의 addr을 저장하고 충전 후보/운행 참고요금 stations[].address로 반환한다. 기존 가격 스냅샷에는 주소가 없어도 정상 조회되며 새 카탈로그 수집 이후의 새 조회에 주소가 포함된다.
+
+POST `/fuel-candidates/nearby-stations`는 현재 인증된 차량 사용자가 요청하는 읽기 전용 오피넷 조회다. 본문은 `latitude, longitude, measuredAt, receivedAt, source=PLEOS_CURRENT_UPDATE, fuelType`이며 현재 위치 측정·수신 시각을 검증한다. 이 조회는 실제 주유 후보나 감지 위치를 생성·변경하지 않는다. 결과는 `searchStatus, fetchedAt, stations[{stationId,name,address,distanceMeters,fuelType,postedPriceWonPerLiter,pricePostedAt,priceFetchedAt,priceStatus}]`이다.
+
+OPINET_KEY와 검증된 OPINET_KATEC_PROJ4가 필요하다. PLEOS_COORDINATE_SYSTEM=WGS84 검증 조건도 충족해야 한다. 투영 정의를 추측하지 않고 운영자가 검증한 PROJ 정의를 Proj4J로 변환한다. 위경도를 그대로 X/Y에 보내지 않는다. 키와 투영이 없으면 OPINET_NOT_CONFIGURED / COORDINATE_SYSTEM_UNVERIFIED를 반환한다. 키·좌표는 앱 응답·DB·일반 로그로 내보내지 않는다.
+
+제공받은 Opinet_API_Free.pdf의 code 인증 파라미터를 사용한다. aroundAll.do를 1km로 검색하고 결과가 없으면 3km로 한 번 확대한다. 거리순 상위 최대 3곳에 detailById.do를 호출해 NEW_ADR(없으면 VAN_ADR), 같은 PRODCD의 가격·TRADE_DT/TRADE_TM을 읽는다. 가격이 오래되거나 파싱에 실패해도 주유소 이름·주소는 표시하고 가격은 숨긴다. 명시적으로 조회한 현재 위치이므로 과거 주유 감지 위치로 저장하지 않는다.
+
+좌표 변환 라이브러리: [LocationTech Proj4J](https://github.com/locationtech/proj4j). 실제 KATEC 투영 정의와 실서비스 키 호출은 출시 환경에서 확인해야 한다.

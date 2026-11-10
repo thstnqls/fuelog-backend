@@ -62,7 +62,7 @@ public class ChargerCatalogImporter {
             if(!complete || rows.isEmpty()) return;
             transaction.executeWithoutResult(status->{
                 db.update("DELETE FROM charger_catalog");
-                db.batchUpdate("INSERT INTO charger_catalog VALUES(?,?,?,?,?,?,?,?)",rows);
+                db.batchUpdate("INSERT INTO charger_catalog (station_id,charger_id,station_name,operator_id,latitude,longitude,connector_kw,observed_at,address) VALUES(?,?,?,?,?,?,?,?,?)",rows);
             });
         } catch(Exception failure) {
             // Keep the last complete snapshot. Exception messages can contain the service key.
@@ -81,7 +81,9 @@ public class ChargerCatalogImporter {
             // GS's metered 3kW tariff and highway-specific CHAEVI prices need separate verified tariffs.
             if(op.equals("PI") && kw.compareTo(BigDecimal.valueOf(3))<=0 || op.equals("CV") && (item.path("addr").asText()+item.path("statNm").asText()).contains("휴게소")) return null;
             String name=item.path("statNm").asText();if(name.isBlank()||name.length()>200) return null;
-            return new Object[]{id,charger,name,op,lat,lon,kw,LocalDateTime.ofInstant(at,ZoneOffset.UTC)};
+            String address=item.path("addr").asText("").replaceAll("[\\p{Cntrl}]", " ").trim();
+            if(address.length()>500) address=address.substring(0,500);
+            return new Object[]{id,charger,name,op,lat,lon,kw,LocalDateTime.ofInstant(at,ZoneOffset.UTC),address.isBlank()?null:address};
         } catch(RuntimeException invalid) { return null; }
     }
     static String decodedKey(String key) { return URLDecoder.decode(key.replace("+","%2B"),StandardCharsets.UTF_8); }

@@ -293,6 +293,111 @@ class MaintenanceTests {
         catch (ResponseStatusException ex) { return ex.getStatusCode().value(); }
     }
 
+    @Test
+    void overduePlanWaitsForExplicitConfirmationThenCreatesExactlyOneSuccessor() {
+        plan(item,"oil",new BigDecimal("1000"),1);
+        LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
+        service.create(owner,vehicle,"baseline",event(item,today.minusMonths(3).toString(),"10000",true,Status.CONFIRMED));
+        Plan before=find(item);
+        service.create(owner,vehicle,"visit",event(item,today.toString(),"12000",true,Status.VISIT_ESTIMATE));
+        assertEquals(before.nextDueDate(),find(item).nextDueDate());
+        assertEquals(1,count("maintenance_plans"));
+        CompletionInput input=new CompletionInput(true,today,new BigDecimal("12000"));
+        Completion done=service.complete(owner,vehicle,item,"1","complete",input);
+        assertFalse(done.completedPlan().active());
+        assertEquals(PlanStatus.COMPLETE,done.completedPlan().status());
+        assertNotNull(done.completedPlan().completedAt()); assertNotNull(done.completedPlan().deletedAt());
+        assertEquals(before.nextDueDate(),done.completedPlan().nextDueDate());
+        Plan next=done.nextPlan();
+        assertNotEquals(item,next.id()); assertEquals(next.id(),done.completedPlan().nextPlanId());
+        assertTrue(next.active()); assertEquals("oil",next.name());
+        equal("1000",next.intervalKm()); assertEquals(1,next.intervalMonths());
+        assertEquals(today.plusMonths(1),next.nextDueDate()); equal("13000",next.nextDueKm());
+        assertEquals(done,service.complete(owner,vehicle,item,"1","complete",input));
+        assertEquals(2,count("maintenance_plans")); assertEquals(3,count("maintenance_events"));
+        assertEquals(next.id(),service.summary(bearer).items().getFirst().id());
+        denied(409,()->service.putPlan(owner,vehicle,item,"2",new PlanInput("oil",true,Basis.USER,null,new BigDecimal("1000"),1)));
+        denied(409,()->service.complete(owner,vehicle,item,"2","another",input));
+        denied(409,()->service.complete(owner,vehicle,item,"1","complete",new CompletionInput(true,today,new BigDecimal("12001"))));
+        denied(409,()->service.deleteEvent(owner,vehicle,done.event().id(),"1"));
+        denied(409,()->service.patch(owner,vehicle,done.event().id(),"1",json.readTree("{\"status\":\"VISIT_ESTIMATE\"}")));
+        service.putPlan(owner,vehicle,next.id(),"1",new PlanInput("oil",true,Basis.USER,null,new BigDecimal("2000"),2));
+        assertEquals(today.plusMonths(2),find(next.id()).nextDueDate()); equal("14000",find(next.id()).nextDueKm());
+        Completion again=service.complete(owner,vehicle,next.id(),"2","second-cycle",
+                new CompletionInput(true,today,new BigDecimal("13000")));
+        equal("15000",again.nextPlan().nextDueKm()); assertEquals(3,count("maintenance_plans"));
+    }
+
+    @Test
+    void completionRequiresConfirmationPermissionRevisionAndBothConfiguredAxes() throws Exception {
+        plan(item,"oil",new BigDecimal("1000"),1);
+        LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
+        CompletionInput input=new CompletionInput(true,today,new BigDecimal("10000"));
+        denied(403,()->service.complete(member,vehicle,item,"1","no-role",input));
+        denied(428,()->service.complete(owner,vehicle,item,null,"no-version",input));
+        denied(412,()->service.complete(owner,vehicle,item,"2","stale",input));
+        denied(400,()->service.complete(owner,vehicle,item,"1","false",new CompletionInput(false,today,new BigDecimal("10000"))));
+        denied(400,()->service.complete(owner,vehicle,item,"1","missing-km",new CompletionInput(true,today,null)));
+        denied(400,()->service.complete(owner,vehicle,item,"1","future",new CompletionInput(true,today.plusDays(1),new BigDecimal("10000"))));
+        assertEquals(0,count("maintenance_events")); assertEquals(1,count("maintenance_plans"));
+        String path="/maintenance/plans/"+item+"/complete";
+        mvc.perform(post(path).header("Authorization",bearer).header("If-Match","1").header("Idempotency-Key","http")
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(input))).andExpect(status().isForbidden());
+        authenticateDevice(owner);
+        mvc.perform(post(path).header("Authorization",bearer).header("If-Match","1").header("Idempotency-Key","http")
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(input)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.completedPlan.active").value(false))
+                .andExpect(jsonPath("$.completedPlan.deletedAt").isNotEmpty()).andExpect(jsonPath("$.nextPlan.active").value(true));
+        UUID personal=UUID.randomUUID();
+        service.putPlan(member,vehicle,personal,null,new PlanInput("personal",false,Basis.USER,null,null,1));
+        mvc.perform(post("/mobile/vehicles/"+vehicle+"/maintenance-plans/"+personal+"/complete")
+                .header("Authorization","Bearer member").header("If-Match","1").header("Idempotency-Key","personal")
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new CompletionInput(true,today,null))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nextPlan.shared").value(false));
+    }
+
+    @Test
+    void simultaneousCompletionRetriesCreateOneNextPlan() throws Exception {
+        plan(item,"oil",null,1);
+        var input=new CompletionInput(true,LocalDate.now(ZoneId.of("Asia/Seoul")),null);
+        try (var executor=Executors.newFixedThreadPool(2)) {
+            var a=executor.submit(()->service.complete(owner,vehicle,item,"1","same-complete",input));
+            var b=executor.submit(()->service.complete(owner,vehicle,item,"1","same-complete",input));
+            assertEquals(a.get(5,TimeUnit.SECONDS),b.get(5,TimeUnit.SECONDS));
+        }
+        assertEquals(2,count("maintenance_plans")); assertEquals(1,count("maintenance_events"));
+    }
+
+    @Test
+    void distanceDangerStartsAtExactlyOneAndHalfCyclesAndIgnoresStaleSamples() {
+        plan(item,"oil",new BigDecimal("1000"),null);
+        assertEquals(RiskLevel.UNKNOWN,find(item).riskLevel());
+        service.create(owner,vehicle,"base",event(item,null,"10000",true,Status.CONFIRMED));
+        odo("10999",Instant.now().minusSeconds(3));
+        assertEquals(RiskLevel.NORMAL,find(item).riskLevel());
+        odo("11499.999",Instant.now().minusSeconds(2));
+        assertEquals(RiskLevel.OVERDUE,find(item).riskLevel());
+        odo("11500",Instant.now().minusSeconds(1));
+        assertEquals(RiskLevel.DANGER,find(item).riskLevel());
+        assertEquals(RiskLevel.DANGER,service.summary(bearer).items().getFirst().riskLevel());
+        db.update("UPDATE vehicle_odometer_samples SET observed_at=DATEADD('DAY',-8,CURRENT_TIMESTAMP)");
+        assertEquals(RiskLevel.UNKNOWN,find(item).riskLevel());
+        assertEquals(RiskLevel.UNKNOWN,service.summary(bearer).items().getFirst().riskLevel());
+    }
+
+    @Test
+    void dateDangerDoesNotCreateAnotherPlan() {
+        plan(item,"oil",null,1);
+        LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
+        LocalDate last=today.minusMonths(3);
+        service.create(owner,vehicle,"base",event(item,last.toString(),null,true,Status.CONFIRMED));
+        assertEquals(RiskLevel.DANGER,find(item).riskLevel());
+        service.patch(owner,vehicle,service.events(owner,vehicle,null).items().getFirst().id(),"1",
+                json.readTree("{\"serviceDate\":\""+today+"\"}"));
+        assertEquals(RiskLevel.NORMAL,find(item).riskLevel());
+        assertEquals(today.plusMonths(1),find(item).nextDueDate()); assertEquals(1,count("maintenance_plans"));
+    }
+
     private void plan(UUID id,String name,BigDecimal km,Integer months) { service.putPlan(owner,vehicle,id,null,new PlanInput(name,true,Basis.USER,null,km,months)); }
     @Test
     void vehicleOwnerCanEditCyclesWhileAnonymousMembersAndManagersOnlyRead() throws Exception {

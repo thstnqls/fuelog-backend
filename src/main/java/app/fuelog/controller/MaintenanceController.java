@@ -60,13 +60,22 @@ public class MaintenanceController {
     }
 
     @GetMapping("/maintenance/plans")
-    @Operation(summary = "차량 오너의 공용 교체주기 관리 목록")
+    @Operation(
+            summary = "차량 오너의 공용 교체주기 관리 목록",
+            description = "장치의 설치 Bearer로 호출합니다. 현재 인증된 사용자가 연결 차량의 OWNER여야 하며 활성화된 공동 정비 계획을 반환합니다. "
+                    + "개인 계획과 비활성 계획은 제외합니다. 사용자 미확인·연결 해제·오너 권한 없음은 403입니다.")
     public Plans plans(@RequestHeader(value="Authorization",required=false) String bearer) {
         return service.vehiclePlans(bearer);
     }
 
     @PutMapping("/maintenance/plans/{itemId}")
-    @Operation(summary = "차량 오너의 공용 교체주기와 마지막 교체 기록 저장")
+    @Operation(
+            summary = "차량 오너의 공용 교체주기와 마지막 교체 기록 저장",
+            description = "장치의 설치 Bearer로 인증된 차량 OWNER만 호출할 수 있습니다. plan.shared=true인 정비 계획과 operationId를 보내고 "
+                    + "필요하면 lastServiceDate(YYYY-MM-DD), lastServiceKm(차량 누적 km)를 추가합니다.\n\n"
+                    + "새 계획은 새 itemId UUID로 생성합니다. 기존 계획 변경은 현재 revision을 If-Match 헤더로 보내며 응답 ETag에 새 revision을 반환합니다. "
+                    + "마지막 정비값이 달라지면 확정 공동 정비 이력을 추가하고 다음 예정을 재계산합니다. 이전 날짜로 되돌리는 수정은 모바일 정비 이력 API를 사용하세요. "
+                    + "기존 계획의 If-Match 누락은 428, 버전 불일치는 412입니다.")
     public Plan putPlan(@RequestHeader(value="Authorization",required=false) String bearer,
             @PathVariable UUID itemId, @RequestHeader(value="If-Match",required=false) String revision,
             @Valid @RequestBody VehiclePlanInput body, HttpServletResponse response) {
@@ -75,7 +84,27 @@ public class MaintenanceController {
         return result;
     }
 
+    @PostMapping("/maintenance/plans/{itemId}/complete")
+    @Operation(summary = "차량 오너의 정비 완료 확인 및 다음 회차 생성",
+            description = "설치 Bearer로 인증된 현재 차량 OWNER만 공동 계획을 완료할 수 있습니다. "
+                    + "If-Match에 현재 계획 revision, Idempotency-Key에 재시도 키를 보내세요. "
+                    + "본문은 {confirmed:true,serviceDate:YYYY-MM-DD,odometerKm:정비 당시 누적거리}입니다. 거리 주기가 있으면 누적거리 필수입니다. "
+                    + "기존 계획을 완료·논리 삭제하고 동일 이름·주기의 새 계획을 원자적으로 생성합니다. event, completedPlan, nextPlan을 반환합니다. "
+                    + "같은 키·본문 재시도는 같은 완료 이력과 다음 계획 ID를 반환하며 완료 확인 이력의 수정·삭제는 409입니다.")
+    public Completion complete(@RequestHeader(value = "Authorization", required = false) String bearer,
+            @PathVariable UUID itemId,
+            @RequestHeader(value = "If-Match", required = false) String ifMatch,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @Valid @RequestBody CompletionInput body) {
+        return service.completeVehiclePlan(bearer, itemId, ifMatch, key, body);
+    }
+
     @DeleteMapping("/maintenance/plans/{itemId}")
+    @Operation(
+            summary = "차량 오너의 공용 교체주기 비활성화",
+            description = "장치의 설치 Bearer로 인증된 차량 OWNER만 호출할 수 있습니다. 현재 계획 revision을 If-Match 헤더로 보내세요. "
+                    + "공동 계획만 비활성화할 수 있으며 개인 계획은 이 경로에서 변경할 수 없습니다. 과거 정비 이력은 보존하고 차량 요약에서 해당 예정만 제외합니다. "
+                    + "If-Match 누락은 428, 버전 불일치는 412이며 id, revision, deleted를 반환합니다.")
     public Deleted deletePlan(@RequestHeader(value="Authorization",required=false) String bearer,
             @PathVariable UUID itemId, @RequestHeader(value="If-Match",required=false) String revision) {
         return service.deleteVehiclePlan(bearer,itemId,revision);

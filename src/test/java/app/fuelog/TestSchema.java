@@ -53,11 +53,13 @@ final class TestSchema {
         db.execute("CREATE TABLE vehicle_fuel_metadata (vehicle_id VARCHAR(36) PRIMARY KEY, capacity_liters DECIMAL(10,3), capacity_verified_at TIMESTAMP, capacity_source VARCHAR(200), unit_price DECIMAL(12,3), price_at BIGINT, price_valid_until BIGINT, price_source VARCHAR(200))");
         db.execute("CREATE TABLE fuel_candidate_operations (candidate_id VARCHAR(36), operation_id VARCHAR(100), actor_id VARCHAR(36) NOT NULL, request_payload CLOB NOT NULL, response_payload CLOB NOT NULL, previous_revision BIGINT NOT NULL, resulting_revision BIGINT NOT NULL, created_at TIMESTAMP NOT NULL, PRIMARY KEY(candidate_id,operation_id))");
         new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
-                new org.springframework.core.io.ClassPathResource("db/migration/V10__maintenance_and_odometer.sql"))
+                new org.springframework.core.io.ClassPathResource("db/migration/V10__maintenance_and_odometer.sql"),
+                new org.springframework.core.io.ClassPathResource("db/migration/V17__maintenance_completion.sql"))
                 .execute(java.util.Objects.requireNonNull(db.getDataSource()));
         new org.springframework.jdbc.datasource.init.ResourceDatabasePopulator(
                 new org.springframework.core.io.ClassPathResource("db/migration/V14__ev_charging.sql"),
-                new org.springframework.core.io.ClassPathResource("db/migration/V15__charging_reference_tariffs.sql"))
+                new org.springframework.core.io.ClassPathResource("db/migration/V15__charging_reference_tariffs.sql"),
+                new org.springframework.core.io.ClassPathResource("db/migration/V16__charger_station_address.sql"))
                 .execute(java.util.Objects.requireNonNull(db.getDataSource()));
         ConnectionSettingsTestSchema.create(db);
     }

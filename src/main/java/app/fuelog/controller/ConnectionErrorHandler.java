@@ -26,6 +26,8 @@ import java.util.Map;
             TripSummaryController.class,
             MobileInboxController.class,
             FuelCandidateController.class,
+            ChargeCandidateController.class,
+            FuelStationLookupController.class,
             MaintenanceController.class,
             MobileMaintenanceController.class
         })

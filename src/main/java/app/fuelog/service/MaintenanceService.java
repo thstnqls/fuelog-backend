@@ -97,10 +97,12 @@ public class MaintenanceService {
                                             distanceDue,
                                             remaining,
                                             p.km(),
-                                            p.months());
+                                            p.months(),
+                                            risk(p, today, fresh ? sample.km() : null));
                                 })
                         .sorted(
-                                Comparator.comparingInt(
+                                Comparator.comparingInt((SummaryItem p) -> p.riskLevel() == RiskLevel.DANGER ? 0 : 1)
+                                        .thenComparingInt(
                                                 (SummaryItem p) ->
                                                         Boolean.TRUE.equals(p.dateDue())
                                                                         || Boolean.TRUE.equals(
@@ -208,6 +210,7 @@ public class MaintenanceService {
         member(user, vehicle);
         return new Plans(
                 repo.plans(vehicle).stream()
+                        .filter(p -> p.deletedAt() == null)
                         .filter(p -> visible(p, user))
                         .map(this::view)
                         .toList());
@@ -220,6 +223,7 @@ public class MaintenanceService {
         PlanRow prior = repo.plan(vehicle, item);
         if (prior != null) {
             writablePlan(prior, user, role);
+            if (prior.completedAt() != null) fail(HttpStatus.CONFLICT, "PLAN_ALREADY_COMPLETED");
             match(ifMatch, prior.revision());
             if (prior.shared() != b.shared() && !prior.owner().equals(user))
                 fail(HttpStatus.FORBIDDEN, "PLAN_OWNER_REQUIRED");
@@ -248,6 +252,53 @@ public class MaintenanceService {
         recalculate(vehicle, item);
         repo.bump(vehicle);
         return view(repo.plan(vehicle, item));
+    }
+
+    @Transactional
+    public Completion completeVehiclePlan(String bearer, UUID item, String ifMatch, String key, CompletionInput b) {
+        var owner = deviceOwner(bearer);
+        if (!requirePlan(owner.vehicle(), item).shared()) fail(HttpStatus.FORBIDDEN, "PLAN_NOT_SHARED");
+        return complete(owner.user(), owner.vehicle(), item, ifMatch, key, b);
+    }
+
+    @Transactional
+    public Completion complete(UUID user, UUID vehicle, UUID item, String ifMatch, String key, CompletionInput b) {
+        String role = member(user, vehicle);
+        validateBean(b);
+        PlanRow p = requirePlan(vehicle, item);
+        writablePlan(p, user, role);
+        EventInput input = canonical(new EventInput(item, b.serviceDate(), b.odometerKm(),
+                Status.CONFIRMED, p.shared(), false, null, null, null, null, null));
+        validateEvent(input);
+        if (key == null || key.isBlank() || key.length() > 100)
+            fail(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_REQUIRED");
+        EventRow previous = repo.forKey(vehicle, user, key);
+        if (previous != null && !MessageDigest.isEqual(hash(input), previous.createHash()))
+            fail(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED");
+        if (p.completedAt() != null) {
+            if (previous == null || !previous.id().equals(p.completionEvent()))
+                fail(HttpStatus.CONFLICT, "PLAN_ALREADY_COMPLETED");
+            return new Completion(json.readValue(previous.createResponse(), Event.class), view(p),
+                    view(requirePlan(vehicle, p.nextPlan())));
+        }
+        match(ifMatch, p.revision());
+        if (!p.active()) fail(HttpStatus.CONFLICT, "PLAN_INACTIVE");
+        if (p.km() != null && b.odometerKm() == null)
+            fail(HttpStatus.BAD_REQUEST, "COMPLETION_ODOMETER_REQUIRED");
+        if (p.lastDate() != null && b.serviceDate().isBefore(p.lastDate())
+                || p.lastKm() != null && b.odometerKm() != null && b.odometerKm().compareTo(p.lastKm()) < 0)
+            fail(HttpStatus.BAD_REQUEST, "COMPLETION_BEFORE_LAST_SERVICE");
+        if (previous != null) fail(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED");
+        Event event = create(user, vehicle, key, input);
+        UUID next = UUID.randomUUID();
+        Instant now = now();
+        repo.savePlan(vehicle, next, p.owner(), new PlanInput(p.name(), p.shared(), p.basis(),
+                p.evidence(), p.km(), p.months()), 1, true, now);
+        repo.completePlan(item, event.id(), next, now);
+        // 완료된 회차에는 원래 예정 시점을 보존하고, 실제 교체 시점은 다음 회차의 기준으로 쓴다.
+        repo.due(item, p.lastDate(), p.lastKm(), p.dueDate(), p.dueKm());
+        recalculate(vehicle, next);
+        return new Completion(event, view(requirePlan(vehicle, item)), view(requirePlan(vehicle, next)));
     }
 
     @Transactional
@@ -306,6 +357,7 @@ public class MaintenanceService {
         String role = member(user, vehicle);
         EventRow prior = requireEvent(vehicle, eventId);
         if (!prior.author().equals(user)) fail(HttpStatus.FORBIDDEN, "EVENT_AUTHOR_REQUIRED");
+        if (repo.completionEvent(eventId)) fail(HttpStatus.CONFLICT, "COMPLETION_EVENT_IMMUTABLE");
         if (prior.deletedAt() != null) fail(HttpStatus.GONE, "EVENT_DELETED");
         EventInput original = parse(prior);
         if (original.shared()) ownerRole(role);
@@ -342,6 +394,7 @@ public class MaintenanceService {
         String role = member(user, vehicle);
         EventRow prior = requireEvent(vehicle, eventId);
         if (!prior.author().equals(user)) fail(HttpStatus.FORBIDDEN, "EVENT_AUTHOR_REQUIRED");
+        if (repo.completionEvent(eventId)) fail(HttpStatus.CONFLICT, "COMPLETION_EVENT_IMMUTABLE");
         if (parse(prior).shared()) ownerRole(role);
         if (prior.deletedAt() != null && expected(ifMatch) == prior.revision() - 1)
             return new Deleted(eventId, prior.revision(), true);
@@ -461,7 +514,32 @@ public class MaintenanceService {
                 p.lastDate(),
                 p.lastKm(),
                 p.dueDate(),
-                p.dueKm());
+                p.dueKm(),
+                p.completedAt(),
+                p.deletedAt(),
+                p.nextPlan(),
+                p.completedAt() != null ? PlanStatus.COMPLETE : p.active() ? PlanStatus.ACTIVE : PlanStatus.INACTIVE,
+                risk(p));
+    }
+
+    private RiskLevel risk(PlanRow p) {
+        Sample sample = repo.latest(p.vehicle());
+        boolean fresh = sample != null && !sample.observedAt().isBefore(Instant.now().minus(ODOMETER_FRESHNESS));
+        return risk(p, LocalDate.now(ZoneId.of("Asia/Seoul")), fresh ? sample.km() : null);
+    }
+
+    static RiskLevel risk(PlanRow p, LocalDate today, BigDecimal km) {
+        if (!p.active()) return RiskLevel.UNKNOWN;
+        boolean dateKnown = p.dueDate() != null && p.lastDate() != null;
+        boolean distanceKnown = p.dueKm() != null && km != null;
+        // 달력 개월 주기의 절반은 해당 회차의 실제 일수로 계산한다(홀수 일수는 올림).
+        boolean dateDanger = dateKnown && ChronoUnit.DAYS.between(p.dueDate(), today) * 2
+                >= ChronoUnit.DAYS.between(p.lastDate(), p.dueDate());
+        boolean distanceDanger = distanceKnown && km.subtract(p.dueKm()).multiply(BigDecimal.valueOf(2)).compareTo(p.km()) >= 0;
+        if (dateDanger || distanceDanger) return RiskLevel.DANGER;
+        if (dateKnown && !today.isBefore(p.dueDate()) || distanceKnown && km.compareTo(p.dueKm()) >= 0)
+            return RiskLevel.OVERDUE;
+        return dateKnown || distanceKnown ? RiskLevel.NORMAL : RiskLevel.UNKNOWN;
     }
 
     private EventInput parse(EventRow row) {

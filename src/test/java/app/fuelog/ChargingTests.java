@@ -39,6 +39,19 @@ class ChargingTests {
         TestSchema.create(db); now=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         db.update("UPDATE charging_tariffs SET verified_at=?,valid_until=?",time(now.minusSeconds(3600)),time(now.plusSeconds(86400)));
     }
+    @Test void tripReferenceNeedsNoPriorChargeButRequiresOwnerAndFreshLocation() {
+        Fixture f=fixture(); station("a","PI",37,127,50);station("b","ME",37.001,127,50);
+        var location=new ReferenceLocation(37.0,127.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE");
+        var result=charges.tripReference(f.bearer,f.interval,location);
+        assertEquals("CURRENT_LOCATION_REFERENCE",result.estimateStatus());
+        assertEquals(2,result.scenarios().getFirst().stations().size());
+        db.update("UPDATE charger_catalog SET address=? WHERE station_id=?", "서울시 테스트로 1", "a");
+        assertEquals("서울시 테스트로 1",charges.tripReference(f.bearer,f.interval,location).scenarios().getFirst().stations().getFirst().address());
+        assertEquals(0,db.queryForObject("SELECT COUNT(*) FROM charge_candidates",Integer.class));
+        assertThrows(ResponseStatusException.class,()->charges.tripReference(f.bearer,UUID.randomUUID(),location));
+        assertThrows(ResponseStatusException.class,()->charges.tripReference(f.bearer,f.interval,
+                new ReferenceLocation(37.0,127.0,now.minusSeconds(60),Instant.now(),"PLEOS_CURRENT_UPDATE")));
+    }
     @Test void powerBandsRespectBoundaries() {
         for(int i=0;i<5;i++) assertEquals(List.of("SLOW","MEDIUM","FAST_50","FAST_100","ULTRA").get(i),
                 ChargingEstimateService.powerBand(BigDecimal.valueOf(new int[]{7,30,50,100,200}[i])));
@@ -127,6 +140,21 @@ class ChargingTests {
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
                 .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$[0].id").value(b.id().toString()));
     }
+    @Test void gasStationLookupRequiresVerifiedUserAndValidCoordinates() throws Exception {
+        Fixture f=fixture();
+        String body=json.writeValueAsString(new OpinetLookupService.Request(37.0,127.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE","B027"));
+        var type=org.springframework.http.MediaType.APPLICATION_JSON;
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/fuel-candidates/nearby-stations").contentType(type).content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized());
+        var other=pairing.createInstallation();
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/fuel-candidates/nearby-stations").header("Authorization","Bearer "+other.installation_secret()).contentType(type).content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/fuel-candidates/nearby-stations").header("Authorization",f.bearer).contentType(type).content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.searchStatus").value("OPINET_NOT_CONFIGURED"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/fuel-candidates/nearby-stations").header("Authorization",f.bearer).contentType(type).content(body.replace("37.0", "99.0")))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest());
+    }
     private Fixture fixture() {
         var issued=pairing.createInstallation(); UUID user=UUID.randomUUID(),vehicle=UUID.randomUUID();
         String bearer="Bearer "+issued.installation_secret();
@@ -139,7 +167,7 @@ class ChargingTests {
     }
     private record Fixture(String bearer,UUID user,UUID interval) {}
     private void station(String id,String op,double lat,double lon,int kw) {
-        db.update("INSERT INTO charger_catalog VALUES(?,?,?,?,?,?,?,?)",id,"01",id,op,lat,lon,kw,time(now));
+        db.update("INSERT INTO charger_catalog (station_id,charger_id,station_name,operator_id,latitude,longitude,connector_kw,observed_at) VALUES(?,?,?,?,?,?,?,?)",id,"01",id,op,lat,lon,kw,time(now));
     }
     private LocalDateTime time(Instant t) { return LocalDateTime.ofInstant(t,ZoneOffset.UTC); }
 }
