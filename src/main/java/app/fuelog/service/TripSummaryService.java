@@ -33,6 +33,7 @@ public class TripSummaryService {
     private final TripSummaryRepository repository;
     private final ObjectMapper json;
     private final JdbcTemplate db;
+    private final TripEvCostService evCosts;
 
     public TripSummaryService(
             InstallationAuth auth,
@@ -42,7 +43,8 @@ public class TripSummaryService {
             TripSummaryRepository repository,
             ObjectMapper json,
             JdbcTemplate db,
-            InstallationAccess access) {
+            InstallationAccess access, TripEvCostService evCosts) {
+        this.evCosts = evCosts;
         this.access = access;
         this.auth = auth;
         this.pairing = pairing;
@@ -131,6 +133,11 @@ public class TripSummaryService {
                     || !previous.vehicle().equals(vehicle))
                 fail(HttpStatus.CONFLICT, "TRIP_OWNER_IMMUTABLE");
             Upload prior = parse(previous.payload());
+            SavedEvCost fixed = evCosts.preserveExisting(previous);
+            if (fixed != null) {
+                var newEnergy = calculate(body,previous.syncedAt()).energyConsumedKwh().value();
+                if (newEnergy == null || fixed.consumedKwh().compareTo(newEnergy) != 0) fail(HttpStatus.CONFLICT,"SAVED_EV_COST_IMMUTABLE");
+            }
             if (!prior.startedAt().equals(body.startedAt())
                     || !prior.endedAt().equals(body.endedAt()))
                 fail(HttpStatus.CONFLICT, "TRIP_BOUNDARY_IMMUTABLE");
@@ -167,7 +174,7 @@ public class TripSummaryService {
     public Summary summary(String bearer, UUID trip, UUID consent) {
         var row = requireTrip(installation(bearer), trip);
         authorize(row, consent);
-        return calculate(parse(row.payload()), row.syncedAt());
+        return withStoredCost(calculate(parse(row.payload()), row.syncedAt()), row.id());
     }
 
     @Transactional
@@ -185,7 +192,7 @@ public class TripSummaryService {
         if (prior == null || prior.revision() < row.revision()) {
             repository.deliver(
                     row,
-                    json.writeValueAsString(calculate(parse(row.payload()), row.syncedAt())),
+                    json.writeValueAsString(withStoredCost(calculate(parse(row.payload()), row.syncedAt()), row.id())),
                     Instant.now().truncatedTo(ChronoUnit.MICROS),
                     prior);
             prior = repository.item(row.user(), tripId);
@@ -211,8 +218,7 @@ public class TripSummaryService {
                                                 r.readAt(),
                                                 r.snapshot() == null
                                                         ? null
-                                                        : json.readValue(
-                                                                r.snapshot(), Summary.class),
+                                                        : withStoredCost(json.readValue(r.snapshot(), Summary.class),r.summaryId()),
                                                 r.kind(),
                                                 r.candidateId(),
                                                 r.candidateRevision()))
@@ -231,6 +237,14 @@ public class TripSummaryService {
                 row.readAt() == null ? body.readAt().truncatedTo(ChronoUnit.MICROS) : row.readAt();
         repository.read(itemId, at);
         return new ReadResult(itemId, at);
+    }
+
+    private Summary withStoredCost(Summary s,long id) {
+        SavedEvCost cost=evCosts.stored(id);
+        if(cost==null && (s.energyConsumedKwh()==null || s.energyConsumedKwh().value()==null || evCosts.legacyEligible(id))) return s;
+        return new Summary(s.tripId(),s.revision(),s.syncedAt(),s.startedAt(),s.endedAt(),s.distanceKm(),
+                s.fuelConsumedLiters(),s.fuelEfficiencyKmPerLiter(),cost==null?new Money(null,"KRW","unavailable","ev_cost_not_saved"):new Money(cost.amount(),cost.currency(),"available",null),
+                cost==null?null:cost.basis(),s.priceObservedAt(),s.quality(),s.energyConsumedKwh(),s.energyEfficiencyKmPerKwh(),cost);
     }
 
     private UUID installation(String bearer) {
@@ -428,7 +442,7 @@ public class TripSummaryService {
                         b.ownerChanged(),
                         "client_reported"),
                 new Metric(energy,energy==null?"unavailable":"available",evReason),
-                new Metric(evEconomy,evEconomy==null?"unavailable":"available",evReason==null && !distanceOk?"invalid_or_missing_distance":evReason));
+                new Metric(evEconomy,evEconomy==null?"unavailable":"available",evReason==null && !distanceOk?"invalid_or_missing_distance":evReason), null);
     }
 
     private static void fail(HttpStatus status, String code) {

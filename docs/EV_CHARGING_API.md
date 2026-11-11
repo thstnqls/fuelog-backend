@@ -100,3 +100,11 @@ OPINET_KEY와 검증된 OPINET_KATEC_PROJ4가 필요하다. PLEOS_COORDINATE_SYS
 제공받은 Opinet_API_Free.pdf의 code 인증 파라미터를 사용한다. aroundAll.do를 1km로 검색하고 결과가 없으면 3km로 한 번 확대한다. 거리순 상위 최대 3곳에 detailById.do를 호출해 NEW_ADR(없으면 VAN_ADR), 같은 PRODCD의 가격·TRADE_DT/TRADE_TM을 읽는다. 가격이 오래되거나 파싱에 실패해도 주유소 이름·주소는 표시하고 가격은 숨긴다. 명시적으로 조회한 현재 위치이므로 과거 주유 감지 위치로 저장하지 않는다.
 
 좌표 변환 라이브러리: [LocationTech Proj4J](https://github.com/locationtech/proj4j). 실제 KATEC 투영 정의와 실서비스 키 호출은 출시 환경에서 확인해야 한다.
+
+
+## C04 완속 평균 비용 최초 저장 (2026-11-11)
+
+C04는 기존 charging-reference를 호출하지 않고 `GET/POST /recording-intervals/{tripId}/ev-cost`를
+사용한다. 완속 3개 사업자 평균 × 유효 소모 kWh를 한 번 저장하며, 운행일 요금 기준일과
+실제 저장 시각을 분리한다. 새 금액은 저장 후 갱신하지 않는다. 기존 충전 증가 후보의
+시나리오 API는 유지한다. 계약과 V18 적용 조건은 [C04 API](C04_API.md#ev-운행-전력비-최초-저장-2026-11-11)를 따른다.

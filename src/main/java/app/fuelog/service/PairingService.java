@@ -42,6 +42,13 @@ public class PairingService {
 
     @Transactional
     public PairingDtos.Issued issue(UUID installation, String key) {
+        return issue(installation, key, null);
+    }
+
+    @Transactional
+    public PairingDtos.Issued issue(UUID installation, String key, String vehicleName) {
+        if (vehicleName != null && (vehicleName.isBlank() || vehicleName.trim().length() > 100))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vehicle name must be 1-100 characters");
         validKey(key);
         Instant now = Instant.now();
         repository.lockInstallation(installation);
@@ -56,6 +63,7 @@ public class PairingService {
         UUID id = UUID.randomUUID();
         Instant expires = now.plusSeconds(120);
         repository.insertRequest(id, installation, sha256(proof), expires, key, now);
+        if (vehicleName != null) repository.setRequestedVehicleName(id, vehicleName.trim());
         return new PairingDtos.Issued(
                 id,
                 expires,
@@ -116,7 +124,7 @@ public class PairingService {
                 id,
                 user,
                 body.vehicle_id(),
-                creating ? body.new_vehicle_name().trim() : null,
+                creating ? request.newVehicleName() != null ? request.newVehicleName() : body.new_vehicle_name().trim() : null,
                 key,
                 code,
                 Instant.now());
@@ -248,7 +256,7 @@ public class PairingService {
     }
 
     private PairingDtos.Status view(PairingRequest request) {
-        String vehicleName = request.newVehicleName();
+        String vehicleName = request.selectedVehicleId() == null ? request.newVehicleName() : repository.vehicleName(request.selectedVehicleId());
         if (vehicleName == null && request.selectedVehicleId() != null)
             vehicleName = repository.vehicleName(request.selectedVehicleId());
         return new PairingDtos.Status(

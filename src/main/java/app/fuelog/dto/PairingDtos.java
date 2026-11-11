@@ -11,6 +11,8 @@ import java.util.UUID;
 
 /** 설치 ID·비밀값을 사용하는 기존 페어링 계약. 필드 이름은 기존 snake_case를 유지한다. */
 public final class PairingDtos {
+    public record IssueRequest(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 100) String vehicle_name) {}
+
     private PairingDtos() {}
 
     @Schema(

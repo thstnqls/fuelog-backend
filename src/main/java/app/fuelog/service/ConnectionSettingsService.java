@@ -108,6 +108,10 @@ public class ConnectionSettingsService {
     @Transactional
     public OperationResult disconnect(String bearer, Jwt jwt, Disconnect b) {
         UUID installation = resolveInstallation(bearer, jwt);
+        return disconnectInstallation(installation, b);
+    }
+
+    private OperationResult disconnectInstallation(UUID installation, Disconnect b) {
         Operation prior = operation(installation, b.operationId());
         if (prior != null) {
             if (!prior.kind().equals(b.kind().name()))
@@ -147,6 +151,62 @@ public class ConnectionSettingsService {
             // Retain the physical vehicle so shared maintenance remains readable without a user.
         }
         return new OperationResult(b.operationId(), state);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Map<String, Object> mobileConnection(Jwt jwt, UUID vehicle) {
+        UUID user = actor.requireUser(jwt);
+        var installations = mobileInstallations(user, vehicle);
+        boolean paired = installations.stream().anyMatch(id -> user.equals(access.currentUser(id)));
+        return java.util.Map.of("paired", paired, "vehicleName", db.queryForObject("SELECT name FROM vehicles WHERE id=?", String.class, vehicle.toString()));
+    }
+
+    @Transactional
+    public OperationResult disconnectMobile(Jwt jwt, UUID vehicle, Disconnect body) {
+        UUID user = actor.requireUser(jwt);
+        if (body.kind() != Kind.USER) fail(HttpStatus.BAD_REQUEST, "USER_DISCONNECT_ONLY");
+        for (UUID id : mobileInstallations(user, vehicle)) {
+            pairing.lockInstallation(id);
+            Integer prior = db.queryForObject("SELECT COUNT(*) FROM connection_operations WHERE installation_id=? AND user_id=? AND operation_id=?",
+                    Integer.class, id.toString(), user.toString(), body.operationId());
+            if (user.equals(access.currentUser(id)) || prior != null && prior > 0)
+                return disconnectInstallation(id, body);
+        }
+        fail(HttpStatus.CONFLICT, "CONNECTION_ALREADY_DISCONNECTED");
+        return null;
+    }
+
+    @Transactional
+    public Map<String, String> renameInstallationVehicle(String bearer, String name) {
+        UUID installation = installation(bearer);
+        UUID vehicle = pairing.linkedVehicle(installation);
+        UUID user = access.currentUser(installation);
+        if (vehicle == null || user == null) fail(HttpStatus.FORBIDDEN, "VERIFIED_OWNER_REQUIRED");
+        return renameVehicle(user, vehicle, name);
+    }
+
+    @Transactional
+    public Map<String, String> renameMobileVehicle(Jwt jwt, UUID vehicle, String name) {
+        return renameVehicle(actor.requireUser(jwt), vehicle, name);
+    }
+
+    private Map<String, String> renameVehicle(UUID user, UUID vehicle, String name) {
+        if (name == null || name.isBlank() || name.trim().length() > 100)
+            fail(HttpStatus.BAD_REQUEST, "INVALID_VEHICLE_NAME");
+        Integer owner = db.queryForObject("SELECT COUNT(*) FROM group_members WHERE vehicle_id=? AND user_id=? AND role='OWNER'",
+                Integer.class, vehicle.toString(), user.toString());
+        if (owner == null || owner == 0) fail(HttpStatus.FORBIDDEN, "OWNER_REQUIRED");
+        String trimmed = name.trim();
+        db.update("UPDATE vehicles SET name=?,updated_at=? WHERE id=?", trimmed, now(), vehicle.toString());
+        return Map.of("vehicle_name", trimmed);
+    }
+
+    private List<UUID> mobileInstallations(UUID user, UUID vehicle) {
+        Integer members = db.queryForObject("SELECT COUNT(*) FROM group_members WHERE vehicle_id=? AND user_id=?",
+                Integer.class, vehicle.toString(), user.toString());
+        if (members == null || members == 0) fail(HttpStatus.FORBIDDEN, "VEHICLE_ACCESS_DENIED");
+        return db.query("SELECT id FROM vehicle_installations WHERE vehicle_id=?",
+                (rs, n) -> UUID.fromString(rs.getString(1)), vehicle.toString());
     }
 
     private UUID resolveInstallation(String bearer, Jwt jwt) {

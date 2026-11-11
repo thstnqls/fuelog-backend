@@ -66,6 +66,15 @@ public final class TripSummaryDtos {
     public record Ev(boolean detected, boolean endpointsValid, boolean missing, boolean chargedDuringInterval,
             @DecimalMin("0") @DecimalMax("1000") BigDecimal consumedKwh) {}
 
+    public record EvCostLocation(@NotNull @DecimalMin("-90") @DecimalMax("90") Double latitude,
+            @NotNull @DecimalMin("-180") @DecimalMax("180") Double longitude,
+            @NotNull Instant measuredAt,@NotNull Instant receivedAt,
+            @NotBlank @Pattern(regexp="PLEOS_CURRENT_UPDATE") String source,
+            @NotBlank @Pattern(regexp="TRIP_END|CONFIRMATION") String locationBasis) {}
+    public record SavedEvCost(BigDecimal amount,String currency,BigDecimal averageWonPerKwh,BigDecimal consumedKwh,
+            java.time.LocalDate tariffDate,Instant calculatedAt,String basis,int sourceCount,String locationBasis) {}
+    public record EvCostResult(UUID tripId,UUID owner,String status,SavedEvCost cost) {}
+
     @Schema(name = "TripSummarySynced")
     public record Synced(
             @Schema(description = "운행 UUID. 경로와 본문에 있으면 같은 값이어야 합니다.") UUID tripId,
@@ -107,7 +116,7 @@ public final class TripSummaryDtos {
             String priceSource,
             Instant priceObservedAt,
             Quality quality,
-            Metric energyConsumedKwh, Metric energyEfficiencyKmPerKwh) {}
+            Metric energyConsumedKwh, Metric energyEfficiencyKmPerKwh, SavedEvCost savedEvCost) {}
 
     @Schema(name = "TripSummaryDeliver")
     public record Deliver(

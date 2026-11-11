@@ -200,6 +200,10 @@ public class PairingRepository {
                 id.toString());
     }
 
+    public void setRequestedVehicleName(UUID request, String name) {
+        db.update("UPDATE pairing_requests SET new_vehicle_name=? WHERE id=?", name, request.toString());
+    }
+
     public boolean userManagesVehicle(UUID user, UUID vehicle) {
         return !db.query(
                         "SELECT user_id FROM group_members WHERE vehicle_id=? AND user_id=? AND"

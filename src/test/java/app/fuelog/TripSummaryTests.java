@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties="fuelog.charging.pleos-coordinate-system=WGS84")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class TripSummaryTests {
@@ -40,6 +40,7 @@ class TripSummaryTests {
     @Autowired VehicleHomeService home;
     @Autowired TripUserCandidateService candidates;
     @Autowired TripSummaryService service;
+    @Autowired TripEvCostService costs;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @MockitoBean JwtDecoder decoder;
@@ -240,6 +241,146 @@ class TripSummaryTests {
         mvc.perform(get("/mobile/inbox")).andExpect(status().isUnauthorized());
         var other = pairing.createInstallation();
         assertStatus(404, () -> service.summary("Bearer " + other.installation_secret(), trip, consent));
+    }
+
+    @Test
+    void slowTripCostUsesHistoricalRatesAndCanOnlyBeSavedOnce() {
+        prepareCostTrip();
+        slowStationsAndRates(3);
+        assertEquals("LOCATION_REQUIRED",costs.get(bearer,trip).status());
+        assertEquals(0,count("trip_ev_costs"));
+        Instant before=Instant.now();
+        EvCostResult saved=costs.calculate(bearer,trip,costLocation());
+        assertEquals("SAVED",saved.status());
+        assertEquals(0,new BigDecimal("1320").compareTo(saved.cost().amount()));
+        assertEquals(0,new BigDecimal("330").compareTo(saved.cost().averageWonPerKwh()));
+        assertEquals(3,saved.cost().sourceCount());
+        assertEquals(end.atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate(),saved.cost().tariffDate());
+        assertTrue(saved.cost().calculatedAt().isAfter(before.minusSeconds(1)));
+        assertNotEquals(saved.cost().tariffDate(),saved.cost().calculatedAt().atZone(java.time.ZoneId.of("Asia/Seoul")).toLocalDate());
+        db.update("UPDATE charging_tariffs SET won_per_kwh=999");
+        assertEquals(saved,costs.calculate(bearer,trip,new EvCostLocation(38.0,128.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE","CONFIRMATION")));
+        assertEquals(saved,costs.get(bearer,trip));
+        assertEquals(1,count("trip_ev_costs"));
+        Summary summary=service.summary(bearer,trip,null);
+        assertEquals(saved.cost(),summary.savedEvCost());
+        assertEquals(0,new BigDecimal("1320").compareTo(summary.estimatedCost().value()));
+        assertStatus(409,()->service.upload(bearer,trip,evBody(2,new BigDecimal("5"),false)));
+        String evidence=db.queryForObject("SELECT price_evidence FROM trip_ev_costs",String.class);
+        assertFalse(evidence.contains("latitude"));assertFalse(evidence.contains("longitude"));
+        assertFalse(json.writeValueAsString(saved).contains("stations"));
+    }
+
+    @Test
+    void legacyMobileSnapshotWithoutEvMetricsStillLoads() {
+        service.upload(bearer,trip,body(1,consent));
+        service.deliver(bearer,trip,consent,new Deliver("mobile-inbox:"+trip,1L));
+        @SuppressWarnings("unchecked")
+        Map<String,Object> old=json.readValue(db.queryForObject("SELECT snapshot FROM mobile_trip_inbox",String.class),Map.class);
+        old.remove("energyConsumedKwh");old.remove("energyEfficiencyKmPerKwh");old.remove("savedEvCost");
+        db.update("UPDATE mobile_trip_inbox SET snapshot=?",json.writeValueAsString(old));
+        assertEquals(0,new BigDecimal("6800").compareTo(service.inbox(user,0).items().getFirst().summary().estimatedCost().value()));
+    }
+
+    @Test
+    void tripEndLocationSavesImmediatelyThroughHttpAndGetNeedsNoLocation() throws Exception {
+        prepareCostTrip(51);slowStationsAndRates(3);
+        var location=new EvCostLocation(37.0,127.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE","TRIP_END");
+        mvc.perform(post("/recording-intervals/"+trip+"/ev-cost").header("Authorization",bearer)
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(location)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("SAVED"))
+                .andExpect(jsonPath("$.cost.amount").value(1320)).andExpect(jsonPath("$.cost.locationBasis").value("TRIP_END"))
+                .andExpect(jsonPath("$.stations").doesNotExist());
+        mvc.perform(get("/recording-intervals/"+trip+"/ev-cost").header("Authorization",bearer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.cost.amount").value(1320));
+        mvc.perform(get("/recording-intervals/"+trip+"/ev-cost")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/recording-intervals/"+trip+"/ev-cost").header("Authorization",bearer)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"latitude\":999}"))
+                .andExpect(status().isBadRequest());
+        assertEquals(1,count("trip_ev_costs"));
+    }
+
+    @Test
+    void historicalPriceSelectionIgnoresLaterVersionsAndRequiresThreeSlowOperators() {
+        prepareCostTrip();slowStationsAndRates(2);
+        assertEquals("INSUFFICIENT_HISTORICAL_SLOW_RATES",costs.calculate(bearer,trip,costLocation()).status());
+        assertEquals(0,count("trip_ev_costs"));
+        slowStationsAndRates(3);
+        db.update("UPDATE charging_tariffs SET verified_at=?",TimeUtils.toLocalDateTime(end.plusSeconds(1)));
+        assertEquals("INSUFFICIENT_HISTORICAL_SLOW_RATES",costs.calculate(bearer,trip,costLocation()).status());
+        slowStationsAndRates(3);
+        db.update("INSERT INTO charging_tariffs(operator_id,power_band,tariff_version,won_per_kwh,source_url,verified_at,valid_until) VALUES('PI','SLOW','later',999,'https://example.test',?,?)",
+                TimeUtils.toLocalDateTime(end.plusSeconds(1)),TimeUtils.toLocalDateTime(Instant.now().plusSeconds(86400)));
+        assertEquals(0,new BigDecimal("1320").compareTo(costs.calculate(bearer,trip,costLocation()).cost().amount()));
+    }
+
+    @Test
+    void costIsOwnerBoundAndFirstSuccessfulConcurrentRequestWins() throws Exception {
+        prepareCostTrip();slowStationsAndRates(3);
+        var other=pairing.createInstallation();
+        assertStatus(404,()->costs.calculate("Bearer "+other.installation_secret(),trip,costLocation()));
+        db.update("UPDATE pairing_requests SET approved_user_id=? WHERE installation_id=?",UUID.randomUUID().toString(),installation.toString());
+        assertStatus(403,()->costs.calculate(bearer,trip,costLocation()));
+        db.update("UPDATE pairing_requests SET approved_user_id=? WHERE installation_id=?",user.toString(),installation.toString());
+        assertStatus(400,()->costs.calculate(bearer,trip,new EvCostLocation(37.0,127.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE","TRIP_END")));
+        ExecutorService pool=Executors.newFixedThreadPool(4);
+        try {
+            var tasks=java.util.stream.IntStream.range(0,4).mapToObj(i->pool.submit(()->costs.calculate(bearer,trip,costLocation()))).toList();
+            var first=tasks.getFirst().get(10,TimeUnit.SECONDS);
+            for(var task:tasks) assertEquals(first,task.get(10,TimeUnit.SECONDS));
+            assertEquals(1,count("trip_ev_costs"));
+        } finally {pool.shutdownNow();}
+    }
+
+    @Test
+    void existingLegacyAmountIsPreservedButNewClientPricesCannotBypassMean() {
+        prepareCostTrip();
+        service.upload(bearer,trip,evBody(2,new BigDecimal("4"),true));
+        assertEquals("LOCATION_REQUIRED",costs.get(bearer,trip).status());
+        assertNull(service.summary(bearer,trip,null).estimatedCost().value());
+        db.update("UPDATE trip_summaries SET legacy_ev_cost_eligible=TRUE");
+        var saved=costs.get(bearer,trip);
+        assertEquals("LEGACY_SAVED_ESTIMATE",saved.cost().basis());
+        assertEquals(0,new BigDecimal("1400").compareTo(saved.cost().amount()));
+        slowStationsAndRates(3);
+        assertEquals(saved,costs.calculate(bearer,trip,costLocation()));
+    }
+
+    @Test
+    void mobileInboxSeesCostAddedLaterWithoutCreatingAnotherTrip() {
+        prepareCostTrip();slowStationsAndRates(3);
+        service.deliver(bearer,trip,null,new Deliver("mobile-inbox:"+trip,1L));
+        assertNull(service.inbox(user,0).items().getFirst().summary().savedEvCost());
+        var saved=costs.calculate(bearer,trip,costLocation());
+        var item=service.inbox(user,0).items().getFirst();
+        assertEquals(saved.cost(),item.summary().savedEvCost());
+        assertEquals(1,count("mobile_trip_inbox"));assertEquals(1,count("trip_summaries"));
+    }
+
+    private void prepareCostTrip() {prepareCostTrip(2*86400+60);}
+    private void prepareCostTrip(long agoSeconds) {
+        start=Instant.now().minusSeconds(agoSeconds).truncatedTo(ChronoUnit.SECONDS);end=start.plusSeconds(50);
+        db.update("UPDATE recording_intervals SET started_at=?,user_id=? WHERE id=?",TimeUtils.toLocalDateTime(start),user.toString(),interval.toString());
+        db.update("INSERT INTO pairing_requests(id,installation_id,status,selected_vehicle_id,approved_user_id,updated_at) VALUES(?,?,'completed',?,?,CURRENT_TIMESTAMP)",
+                UUID.randomUUID().toString(),installation.toString(),vehicle.toString(),user.toString());
+        service.upload(bearer,trip,evBody(1,new BigDecimal("4"),false));
+    }
+    private Upload evBody(long revision,BigDecimal energy,boolean clientPrice) {
+        return new Upload(trip,revision,"manual_app",null,start,end,false,new BigDecimal("60"),true,null,null,false,false,false,false,
+                clientPrice?new BigDecimal("350"):null,clientPrice?"KRW":null,clientPrice?"old":null,clientPrice?start:null,clientPrice,
+                new Ev(true,true,false,false,energy));
+    }
+    private EvCostLocation costLocation() {return new EvCostLocation(37.0,127.0,Instant.now(),Instant.now(),"PLEOS_CURRENT_UPDATE","CONFIRMATION");}
+    private void slowStationsAndRates(int operators) {
+        db.update("DELETE FROM charger_catalog");
+        db.update("UPDATE charging_tariffs SET verified_at=?,valid_until=?",TimeUtils.toLocalDateTime(start.minusSeconds(86400)),TimeUtils.toLocalDateTime(Instant.now().plusSeconds(86400)));
+        String[] ids={"PI","ME","KP"};
+        for(int i=0;i<3;i++) {
+            db.update("UPDATE charging_tariffs SET won_per_kwh=? WHERE operator_id=? AND power_band='SLOW'",300+i*30,ids[i]);
+            if(i<operators) db.update("INSERT INTO charger_catalog(station_id,charger_id,station_name,operator_id,latitude,longitude,connector_kw,observed_at) VALUES(?,?,?,?,?,?,?,?)",
+                    "slow-"+i,"01","slow-"+i,ids[i],37.0+i*.001,127.0,7,TimeUtils.toLocalDateTime(Instant.now()));
+        }
+        db.update("INSERT INTO charger_catalog(station_id,charger_id,station_name,operator_id,latitude,longitude,connector_kw,observed_at) VALUES('fast','01','fast','CV',37,127,200,?)",TimeUtils.toLocalDateTime(Instant.now()));
     }
 
     private Upload body(long revision, UUID candidate) {

@@ -63,6 +63,34 @@ class ConnectionSettingsTests {
         when(decoder.decode("owner")).thenReturn(jwt(user));when(decoder.decode("member")).thenReturn(jwt(other));
         when(decoder.decode("proof")).thenReturn(reauth(user,Instant.now().getEpochSecond()));
     }
+    @Test void renameUpdatesCanonicalVehicleNameAndRejectsNonOwner() {
+        service.renameInstallationVehicle(bearer, "  출퇴근 차  ");
+        assertEquals("출퇴근 차", db.queryForObject("SELECT name FROM vehicles WHERE id=?", String.class, vehicle.toString()));
+        assertEquals("출퇴근 차", service.mobileConnection(jwt(user), vehicle).get("vehicleName"));
+        service.renameMobileVehicle(jwt(user), vehicle, "가족 차");
+        assertEquals("가족 차", pairing.installation(installation).vehicle_name());
+        assertStatus(403, () -> service.renameMobileVehicle(jwt(other), vehicle, "변경 불가"));
+        assertStatus(400, () -> service.renameMobileVehicle(jwt(user), vehicle, "   "));
+        service.disconnect(bearer, new Disconnect(Kind.USER, "rename-disconnect"));
+        assertStatus(403, () -> service.renameInstallationVehicle(bearer, "변경 불가"));
+    }
+
+    @Test void mobileAndVehicleObserveTheSameDisconnectAndRetriesPreserveNewPairing() {
+        assertEquals(true, service.mobileConnection(jwt(user), vehicle).get("paired"));
+        assertEquals(false, service.mobileConnection(jwt(other), vehicle).get("paired"));
+        assertStatus(409, () -> service.disconnectMobile(jwt(other), vehicle, new Disconnect(Kind.USER, "other-disconnect")));
+        var result = service.disconnectMobile(jwt(user), vehicle, new Disconnect(Kind.USER, "mobile-disconnect"));
+        assertEquals("COMPLETED", result.status());
+        assertEquals(false, service.mobileConnection(jwt(user), vehicle).get("paired"));
+        assertNull(access.currentUser(installation));
+        rePair(other);
+        assertEquals(result, service.disconnectMobile(jwt(user), vehicle, new Disconnect(Kind.USER, "mobile-disconnect")));
+        assertEquals(other, access.currentUser(installation));
+        service.disconnect(bearer, new Disconnect(Kind.USER, "car-disconnect"));
+        assertEquals(false, service.mobileConnection(jwt(other), vehicle).get("paired"));
+        assertStatus(403, () -> service.mobileConnection(jwt(UUID.randomUUID()), vehicle));
+    }
+
     @Test void settingsAreReadOnlyAndMissingCapabilitiesAndQueueAreUnknown() {
         var first=service.settings(bearer,new Envelope("","settings-key"));
         assertEquals("Test device",first.deviceAlias());assertEquals("UNKNOWN",first.syncStatus());

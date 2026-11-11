@@ -35,6 +35,31 @@ public class ConnectionSettingsController {
         response.setHeader("Cache-Control", "no-store");
     }
 
+    public record VehicleName(@jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max=100) String vehicle_name) {}
+
+    @PutMapping("/vehicle/name")
+    public java.util.Map<String, String> renameVehicle(@RequestHeader(value="Authorization", required=false) String bearer,
+            @Valid @RequestBody VehicleName body) {
+        return service.renameInstallationVehicle(bearer, body.vehicle_name());
+    }
+
+    @PutMapping("/mobile/vehicles/{vehicleId}/name")
+    public java.util.Map<String, String> renameMobileVehicle(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID vehicleId,
+            @Valid @RequestBody VehicleName body) {
+        return service.renameMobileVehicle(jwt, vehicleId, body.vehicle_name());
+    }
+
+    @GetMapping("/mobile/vehicles/{vehicleId}/connection")
+    public java.util.Map<String, Object> mobileConnection(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID vehicleId) {
+        return service.mobileConnection(jwt, vehicleId);
+    }
+
+    @PostMapping("/mobile/vehicles/{vehicleId}/connection/disconnect")
+    public OperationResult disconnectMobile(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID vehicleId,
+            @Valid @RequestBody Disconnect body) {
+        return service.disconnectMobile(jwt, vehicleId, body);
+    }
+
     @PostMapping("/connection/settings")
     @SecurityRequirement(name = "installationBearer")
     @Operation(

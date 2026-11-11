@@ -2,6 +2,7 @@ package app.fuelog.controller;
 
 import app.fuelog.dto.TripSummaryDtos.*;
 import app.fuelog.service.TripSummaryService;
+import app.fuelog.service.TripEvCostService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -28,8 +29,10 @@ import java.util.UUID;
                         + " 필요합니다.")
 public class TripSummaryController {
     private final TripSummaryService service;
+    private final TripEvCostService evCosts;
 
-    public TripSummaryController(TripSummaryService service) {
+    public TripSummaryController(TripSummaryService service,TripEvCostService evCosts) {
+        this.evCosts=evCosts;
         this.service = service;
     }
 
@@ -37,6 +40,16 @@ public class TripSummaryController {
     void noStore(HttpServletResponse response) {
         response.setHeader("Cache-Control", "no-store");
     }
+
+    @GetMapping("/recording-intervals/{tripId}/ev-cost")
+    @Operation(summary="운행의 저장된 전력비 조회",description="한 번 저장된 전력비와 운행 요금 기준일·금액 저장 시각을 반환합니다.")
+    public EvCostResult evCost(@RequestHeader(value="Authorization",required=false) String bearer,@PathVariable UUID tripId) {
+        return evCosts.get(bearer,tripId);
+    }
+    @PostMapping("/recording-intervals/{tripId}/ev-cost")
+    @Operation(summary="완속 1~3개 사업자 평균 운행 전력비 최초 저장",description="위치는 새 Pleos 업데이트, 단가는 서버의 운행 종료일 당시 자료를 사용합니다. 이미 저장됐으면 변경 없이 최초 결과를 반환합니다.")
+    public EvCostResult saveEvCost(@RequestHeader(value="Authorization",required=false) String bearer,@PathVariable UUID tripId,
+            @Valid @RequestBody EvCostLocation body) {return evCosts.calculate(bearer,tripId,body);}
 
     @PutMapping("/recording-intervals/{tripId}")
     @Operation(

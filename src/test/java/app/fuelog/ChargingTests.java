@@ -18,7 +18,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 @org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
-@SpringBootTest(properties="fuelog.charging.pleos-coordinate-system=WGS84")
+@SpringBootTest(properties={"fuelog.charging.pleos-coordinate-system=WGS84","OPINET_KEY=","OPINET_KATEC_PROJ4="})
 @ActiveProfiles("test")
 class ChargingTests {
     @Autowired org.springframework.test.web.servlet.MockMvc mvc;

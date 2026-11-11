@@ -44,6 +44,18 @@ class PairingServiceTests {
     }
 
     @Test
+    void vehicleAliasFromQrBecomesRegisteredVehicleName() {
+        UUID installation = service.createInstallation().installation_id();
+        UUID user = UUID.randomUUID();
+        assertThrows(Exception.class, () -> service.issue(installation, "empty-name", "  "));
+        var issued = service.issue(installation, "alias-issue", "  출퇴근 차량  ");
+        var intent = service.intent(user, issued.id(), "alias-intent",
+                new PairingDtos.IntentRequest(issued.qr().proof(), null, "Mobile name"));
+        var completed = service.confirm(installation, issued.id(), intent.confirmation_code());
+        assertEquals("출퇴근 차량", db.queryForObject("SELECT name FROM vehicles WHERE id=?", String.class, completed.vehicle_id().toString()));
+    }
+
+    @Test
     void createsVehicleOnceAfterVehicleConfirmationAndRejectsReusedProof() {
         UUID installation = service.createInstallation().installation_id();
         UUID user = UUID.randomUUID();

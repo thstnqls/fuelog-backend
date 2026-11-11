@@ -98,3 +98,59 @@ revision 재시도는 같은 결과입니다. 입력 revision은 현재 업로�
 V8 마이그레이션은 `trip_summaries`, `mobile_trip_inbox`와 유일성·참조 제약을
 추가합니다. Android HTTP 작업자·M06 화면·실차 강제 종료 복구는 별도 통합 검증이
 필요합니다. 확인함 서버 저장 성공은 휴대폰 푸시 수신이나 읽음 확인을 뜻하지 않습니다.
+
+
+## EV 운행 전력비 최초 저장 (2026-11-11)
+
+`GET /recording-intervals/{tripId}/ev-cost`와 `POST .../ev-cost`는 설치 Bearer와
+현재 페어링 사용자·운행 소유자·차량 멤버십을 검사한다. 클라이언트 운행 UUID와
+서버 구간 UUID 모두 해당 설치 안에서 해석한다. GET은 위치 입력 없이 저장된 금액만
+읽는다. POST는 다음 새 차량 위치 증거를 HTTPS 본문으로 받는다.
+
+```json
+{
+  "latitude":37.5,"longitude":127.0,
+  "measuredAt":"2026-11-11T01:00:00Z","receivedAt":"2026-11-11T01:00:01Z",
+  "source":"PLEOS_CURRENT_UPDATE","locationBasis":"TRIP_END"
+}
+```
+
+P단 종료 자동 계산은 `TRIP_END`, 이후 사용자가 금액을 확인하면 `CONFIRMATION`이다.
+TRIP_END 위치는 운행 종료 시각부터 10초 안에 측정되어야 한다. 두 경우 모두 새 위치
+업데이트의 측정·수신 시각과 범위를 검사하고 30초가 지난 증거를 거부한다.
+나중에 확인할 때는 현재 위치를 사용하며 과거 종료 위치로 표시하지 않는다.
+원시 좌표는 저장하지 않는다. 좌표계 검증 설정은 `PLEOS_COORDINATE_SYSTEM=WGS84`가 필요하다.
+
+유효한 소모 kWh × **서로 다른 1~3개 사업자의 완속(<30kW) 일반 회원 단가 평균**으로
+원 단위 HALF_UP 계산한다. 반경 1km에서 부족하면 3km까지 한 번 확장하고 사업자당
+가장 가까운 한 시설만 쓴다. 단가는 저장된 운행 endedAt에 `verified_at <= endedAt < valid_until`인
+버전 중 가장 최근 것을 선택한다. 이후에 확인된 현재 요금으로 과거 요금을 대체하지 않는다.
+최근 24시간 이내 카탈로그와 해당 날짜에 유효한 요금이 한 곳도 없으면 금액을 저장하지 않는다.
+최초 보관 요금 이전 날짜와 요금 유효기간의 공백도 계산 불가다.
+
+```json
+{
+  "tripId":"77777777-7777-4777-8777-777777777777",
+  "owner":"11111111-1111-4111-8111-111111111111","status":"SAVED",
+  "cost":{
+    "amount":1320,"currency":"KRW","averageWonPerKwh":330,"consumedKwh":4,
+    "tariffDate":"2026-11-09","calculatedAt":"2026-11-11T01:00:02Z",
+    "basis":"SLOW_THREE_OPERATOR_MEAN","sourceCount":3,"locationBasis":"CONFIRMATION"
+  }
+}
+```
+
+`tariffDate`는 운행 종료일(KST), `calculatedAt`은 실제 최초 저장 시각이다.
+시설별 목록은 이 응답에 포함하지 않는다. 계산 불가 응답은 `cost=null`이며 status는
+LOCATION_REQUIRED / NO_VALID_CONSUMPTION / COORDINATE_SYSTEM_UNVERIFIED /
+INSUFFICIENT_HISTORICAL_SLOW_RATES로 구분한다. 실패해도 기존 운행은 유지된다.
+
+V18 `trip_ev_costs`의 summary_id 기본키와 설치 행 잠금으로 최초 한 건만 저장한다.
+중복·동시 요청은 기존 금액·시각을 반환하며 수정·삭제 API는 없다. 저장 후 소모 kWh를
+변경하는 요약 업로드는 409 SAVED_EV_COST_IMMUTABLE이다. 새 클라이언트가 unitPrice를
+보내도 이 비용 API를 우회할 수 없다. V18 이전 서버에 이미 저장된 EV 비용은
+LEGACY_SAVED_ESTIMATE로 보존한다.
+
+요약의 `estimatedCost`와 `savedEvCost` 및 기존 모바일 확인함 항목은 같은 고정 금액을
+반환한다. 확인함 전달 후 금액이 나중에 저장되어도 새 운행·확인함·revision을 만들지 않는다.
+서버 재시작 시 V18을 적용해야 새 API가 동작한다.

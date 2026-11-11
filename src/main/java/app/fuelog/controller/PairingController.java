@@ -119,9 +119,11 @@ public class PairingController {
                             description = "요청마다 새로 만든 최대 100자 키. 중복 전송으로 새 QR이 여러 개 생기는 것을 막습니다.",
                             example = "issue-20261103-001")
                     @RequestHeader("Idempotency-Key")
-                    String key) {
+                    String key,
+            @Valid @RequestBody(required = false) PairingDtos.IssueRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(service.issue(actor.requireInstallation(installationId, secret), key));
+                .body(service.issue(actor.requireInstallation(installationId, secret), key,
+                        body == null ? null : body.vehicle_name()));
     }
 
     @GetMapping("/pairing-requests/current")

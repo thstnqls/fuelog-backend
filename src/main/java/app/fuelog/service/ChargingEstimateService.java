@@ -29,15 +29,22 @@ public class ChargingEstimateService {
         return 6371000*2*Math.asin(Math.sqrt(Math.min(1,Math.max(0,v))));
     }
     public List<Scenario> estimate(double lat,double lon,BigDecimal kwh,Instant now) {
-        var tariffs=db.query("SELECT * FROM charging_tariffs WHERE verified_at<=? AND valid_until>? ORDER BY verified_at DESC",
-            (r,n)->new Tariff(r.getString("operator_id"),r.getString("power_band"),r.getBigDecimal("won_per_kwh"),r.getString("tariff_version"),r.getString("source_url"),r.getString("source_updated_at"),r.getObject("verified_at",LocalDateTime.class).toInstant(ZoneOffset.UTC)), time(now),time(now));
+        return estimateAt(lat,lon,kwh,now,now,List.of("SLOW","MEDIUM","FAST_50","FAST_100","ULTRA"),2);
+    }
+    public Scenario slowTripEstimate(double lat,double lon,BigDecimal kwh,Instant tariffAt,Instant checkedAt) {
+        var values=estimateAt(lat,lon,kwh,tariffAt,checkedAt,List.of("SLOW"),1);
+        return values.isEmpty()?null:values.getFirst();
+    }
+    private List<Scenario> estimateAt(double lat,double lon,BigDecimal kwh,Instant tariffAt,Instant now,List<String> bands,int required) {
+        var tariffs=db.query("SELECT * FROM charging_tariffs WHERE verified_at<=? AND valid_until>? ORDER BY verified_at DESC,tariff_version DESC",
+            (r,n)->new Tariff(r.getString("operator_id"),r.getString("power_band"),r.getBigDecimal("won_per_kwh"),r.getString("tariff_version"),r.getString("source_url"),r.getString("source_updated_at"),r.getObject("verified_at",LocalDateTime.class).toInstant(ZoneOffset.UTC)), time(tariffAt),time(tariffAt));
         Map<String,Tariff> byKey=new HashMap<>();
         for(var t:tariffs) byKey.putIfAbsent(t.operator+":"+t.band,t);
         var stations=db.query("SELECT * FROM charger_catalog WHERE observed_at>=? AND latitude BETWEEN ? AND ? AND longitude BETWEEN ? AND ?",
             (r,n)->new Charger(r.getString("station_id"),r.getString("station_name"),r.getString("address"),r.getString("operator_id"),r.getDouble("latitude"),r.getDouble("longitude"),r.getBigDecimal("connector_kw")),
             time(now.minusSeconds(86400)),lat-.05,lat+.05,lon-.06,lon+.06);
         List<Scenario> result=new ArrayList<>();
-        for(String band:List.of("SLOW","MEDIUM","FAST_50","FAST_100","ULTRA")) {
+        for(String band:bands) {
             List<ComparedStation> priced=new ArrayList<>();
             for(var s:stations) {
                 var t=byKey.get(s.operator+":"+band);
@@ -47,8 +54,8 @@ public class ChargingEstimateService {
             }
             priced.sort(Comparator.comparingDouble(ComparedStation::distanceMeters).thenComparing(ComparedStation::stationId));
             var local=select(priced,1000);
-            if(local.size()<2) local=select(priced,3000);
-            if(local.size()<2) continue;
+            if(local.size()<required) local=select(priced,3000);
+            if(local.size()<required) continue;
             BigDecimal avg=local.stream().map(ComparedStation::wonPerKwh).reduce(BigDecimal.ZERO,BigDecimal::add)
                 .divide(BigDecimal.valueOf(local.size()),6,RoundingMode.HALF_UP);
             result.add(new Scenario(band,"NEARBY_STANDARD_MEMBER_REFERENCE_MEAN",avg,
