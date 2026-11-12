@@ -38,7 +38,7 @@ public class MaintenanceController {
     @Operation(
             summary = "차량의 공동 정비 예정 조회",
             description =
-                    "사용자 페어링 없이 장치의 설치 Bearer로 연결 차량의 공동 정비 주기·예정 최대 2개를 조회합니다. 이미 도래한 항목을 우선하며 비용·메모·정비소·영수증은"
+                    "사용자 페어링 없이 장치의 설치 Bearer로 연결 차량의 공동 정비 주기·예정 전체를 조회합니다. 제조사 기준을 먼저, 각 기준 안에서는 위험·도래 항목을 우선하며 비용·메모·정비소·영수증은"
                         + " 포함하지 않습니다.\n\n"
                         + "누적거리가 7일보다 오래되면 status=stale이며 remainingKm와 distanceDue는 null입니다. 마지막"
                         + " 누적거리와 관측 시각은 유지합니다.")

@@ -89,7 +89,7 @@ public final class MaintenanceDtos {
             BigDecimal remainingKm,
             @Schema(description = "차량 공용 정비 반복 주기(km). 기간 기준만 있으면 null.") BigDecimal intervalKm,
             @Schema(description = "차량 공용 정비 반복 주기(개월). 거리 기준만 있으면 null.") Integer intervalMonths,
-            @Schema(description = "UNKNOWN=판단 자료 없음, NORMAL=미도래, OVERDUE=도래, DANGER=주기 50% 이상 초과. 날짜·거리 중 높은 위험도.") RiskLevel riskLevel) {}
+            @Schema(description = "UNKNOWN=판단 자료 없음, NORMAL=미도래, OVERDUE=도래, DANGER=주기 50% 이상 초과. 날짜·거리 중 높은 위험도.") RiskLevel riskLevel, boolean manufacturerEvidenceVerified) {}
 
     @Schema(name = "MaintenanceSummary")
     public record Summary(

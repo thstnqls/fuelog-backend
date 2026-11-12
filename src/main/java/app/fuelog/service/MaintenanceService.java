@@ -68,7 +68,7 @@ public class MaintenanceService {
         var items =
                 repo.plans(vehicle).stream()
                         .filter(p -> p.active() && p.shared())
-                        .filter(p -> p.basis() == Basis.USER || verifiedEvidence(p))
+                        .filter(p -> p.basis() == Basis.USER || p.evidence() == null || verifiedEvidence(p))
                         .map(
                                 p -> {
                                     Boolean dateDue =
@@ -98,10 +98,12 @@ public class MaintenanceService {
                                             remaining,
                                             p.km(),
                                             p.months(),
-                                            risk(p, today, fresh ? sample.km() : null));
+                                            p.basis() == Basis.MANUFACTURER && p.evidence() == null ? RiskLevel.UNKNOWN : risk(p, today, fresh ? sample.km() : null),
+                                            p.basis() == Basis.MANUFACTURER && verifiedEvidence(p));
                                 })
                         .sorted(
-                                Comparator.comparingInt((SummaryItem p) -> p.riskLevel() == RiskLevel.DANGER ? 0 : 1)
+                                Comparator.comparingInt((SummaryItem p) -> p.basis() == Basis.MANUFACTURER ? 0 : 1)
+                                        .thenComparingInt(p -> p.riskLevel() == RiskLevel.DANGER ? 0 : 1)
                                         .thenComparingInt(
                                                 (SummaryItem p) ->
                                                         Boolean.TRUE.equals(p.dateDue())
@@ -110,13 +112,10 @@ public class MaintenanceService {
                                                                 ? 0
                                                                 : 1)
                                         .thenComparing(
-                                                p ->
-                                                        Boolean.TRUE.equals(p.dateDue())
-                                                                ? p.nextDueDate()
-                                                                : LocalDate.MAX)
+                                                p -> p.nextDueDate() == null ? LocalDate.MAX : p.nextDueDate())
+                                        .thenComparing(SummaryItem::remainingKm, Comparator.nullsLast(Comparator.naturalOrder()))
                                         .thenComparing(SummaryItem::name)
                                         .thenComparing(p -> p.id().toString()))
-                        .limit(2)
                         .toList();
         UUID editor = access.currentUser(auth.require(bearer).id());
         boolean canEdit = editor != null && "OWNER".equals(repo.role(vehicle, editor));

@@ -44,6 +44,33 @@ class PairingServiceTests {
     }
 
     @Test
+    void unavailableVinMarkersCannotBecomeVehicleIdentifiers() {
+        UUID installation = service.createInstallation().installation_id();
+        for (String marker : new String[]{"invalid", "invaild", "<invalid>", "[invalid]", "invaild!!", "undefined"})
+            assertThrows(Exception.class, () -> service.issue(installation, "invalid-marker", "Car", marker));
+        assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM pairing_requests", Integer.class));
+        assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+    }
+
+    @Test
+    void nineCharacterSdkIdentifierReusesExistingVehicle() {
+        UUID user = UUID.randomUUID();
+        UUID first = service.createInstallation().installation_id();
+        var issued = service.issue(first, "short-vin-first", "Car", "sdk-vin01");
+        var intent = service.intent(user, issued.id(), "short-intent",
+                new PairingDtos.IntentRequest(issued.qr().proof(), null, "Car"));
+        UUID vehicle = service.confirm(first, issued.id(), intent.confirmation_code()).vehicle_id();
+        UUID next = service.createInstallation().installation_id();
+        var qr = service.issue(next, "short-vin-next", "Car", "SDK-VIN01");
+        var selected = service.intent(user, qr.id(), "short-restore",
+                new PairingDtos.IntentRequest(qr.qr().proof(), null, "Car"));
+        assertEquals(vehicle, service.confirm(next, qr.id(), selected.confirmation_code()).vehicle_id());
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+        assertThrows(Exception.class, () -> service.issue(first, "short-bad", "Car", "12345678"));
+        assertThrows(Exception.class, () -> service.issue(first, "short-spaces", "Car", "SDK VIN01"));
+    }
+
+    @Test
     void reinstallWithSameVinReusesVehicleOnlyAfterExistingManagerConfirmation() {
         UUID user = UUID.randomUUID();
         UUID first = service.createInstallation().installation_id();

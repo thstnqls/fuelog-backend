@@ -202,10 +202,21 @@ class MaintenanceTests {
         service.create(owner,vehicle,"future",event(future,"2026-01-01",null,true,Status.CONFIRMED));
         odo("12000",Instant.now());
         var summary=service.summary(bearer);
-        assertEquals(2,summary.items().size());
+        assertEquals(3,summary.items().size());
         assertTrue(summary.items().stream().anyMatch(e->e.id().equals(item) && Boolean.TRUE.equals(e.dateDue())));
         assertTrue(summary.items().stream().anyMatch(e->e.id().equals(distance) && Boolean.TRUE.equals(e.distanceDue())));
-        assertFalse(summary.items().stream().anyMatch(e->e.id().equals(future)));
+        assertEquals(future,summary.items().get(2).id());
+    }
+
+    @Test
+    void legacyManufacturerPlanWithoutEvidenceIsListedAsUnverified() {
+        plan(item,"legacy manufacturer",new BigDecimal("15000"),12);
+        db.update("UPDATE maintenance_plans SET basis='MANUFACTURER',evidence_id=NULL WHERE id=?",item.toString());
+        var result=service.summary(bearer).items();
+        assertEquals(1,result.size());
+        assertEquals(Basis.MANUFACTURER,result.getFirst().basis());
+        assertFalse(result.getFirst().manufacturerEvidenceVerified());
+        assertEquals(RiskLevel.UNKNOWN,result.getFirst().riskLevel());
     }
 
     @Test
@@ -217,9 +228,13 @@ class MaintenanceTests {
         db.update("INSERT INTO maintenance_manufacturer_evidence (id,document_url,document_title,manufacturer,model,model_year_from,model_year_to,service_name,scope_text,interval_km,interval_months,verified_at,verified_by) VALUES (?,'https://example.test/manual','manual','maker','model',2025,2027,'oil','verified normal service',10000,12,CURRENT_TIMESTAMP,'trusted-test')",evidence.toString());
         service.putPlan(owner,vehicle,item,null,b);
         assertEquals(Basis.MANUFACTURER,service.summary(bearer).items().getFirst().basis());
+        UUID custom=UUID.randomUUID();plan(custom,"urgent-user",null,1);
+        service.create(owner,vehicle,"urgent-user",event(custom,LocalDate.now(ZoneOffset.UTC).minusMonths(6).toString(),null,true,Status.CONFIRMED));
+        assertEquals(Basis.MANUFACTURER,service.summary(bearer).items().getFirst().basis());
+        assertEquals(custom,service.summary(bearer).items().get(1).id());
         denied(422,()->service.putPlan(owner,vehicle,item,"1",new PlanInput("oil",true,Basis.MANUFACTURER,evidence,new BigDecimal("5000"),12)));
         db.update("UPDATE maintenance_manufacturer_evidence SET revoked_at=CURRENT_TIMESTAMP WHERE id=?",evidence.toString());
-        assertTrue(service.summary(bearer).items().isEmpty()); assertFalse(find(item).evidence().verified());
+        assertEquals(custom,service.summary(bearer).items().getFirst().id()); assertFalse(find(item).evidence().verified());
     }
 
     @Test
