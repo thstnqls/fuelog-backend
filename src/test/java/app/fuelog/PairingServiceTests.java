@@ -44,6 +44,47 @@ class PairingServiceTests {
     }
 
     @Test
+    void reinstallWithSameVinReusesVehicleOnlyAfterExistingManagerConfirmation() {
+        UUID user = UUID.randomUUID();
+        UUID first = service.createInstallation().installation_id();
+        var issued = service.issue(first, "vin-first", "My car", "1HGCM82633A004352");
+        var intent = service.intent(user, issued.id(), "vin-intent",
+                new PairingDtos.IntentRequest(issued.qr().proof(), null, "Mobile fallback"));
+        UUID vehicle = service.confirm(first, issued.id(), intent.confirmation_code()).vehicle_id();
+        UUID second = service.createInstallation().installation_id();
+        var restored = service.issue(second, "vin-second", "New name", "1HGCM82633A004352");
+        assertFalse(service.installation(second).paired());
+        assertEquals(vehicle, service.preview(user,
+                new PairingDtos.PreviewRequest(restored.id(), restored.qr().proof())).vehicle_id());
+        assertThrows(Exception.class, () -> service.preview(UUID.randomUUID(),
+                new PairingDtos.PreviewRequest(restored.id(), restored.qr().proof())));
+        var approved = service.intent(user, restored.id(), "vin-restore-intent",
+                new PairingDtos.IntentRequest(restored.qr().proof(), vehicle, null));
+        var result = service.confirm(second, restored.id(), approved.confirmation_code());
+        assertEquals(vehicle, result.vehicle_id());
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+        assertEquals(vehicle, service.installation(second).vehicle_id());
+        assertNull(service.installation(first).vehicle_id());
+        assertFalse(service.installation(first).paired());
+        assertThrows(Exception.class, () -> service.issue(first, "wrong-vin", "car", "INVALID"));
+    }
+
+    @Test
+    void existingInstallationCanBindVinBeforeReinstall() {
+        UUID user = UUID.randomUUID();
+        UUID installation = service.createInstallation().installation_id();
+        var issued = service.issue(installation, "old-car", "Car");
+        var intent = service.intent(user, issued.id(), "old-intent",
+                new PairingDtos.IntentRequest(issued.qr().proof(), null, "Car"));
+        UUID vehicle = service.confirm(installation, issued.id(), intent.confirmation_code()).vehicle_id();
+        service.bindInstallationVin(installation, "1HGCM82633A004352");
+        UUID next = service.createInstallation().installation_id();
+        var restored = service.issue(next, "restore-old", "car", "1HGCM82633A004352");
+        assertEquals(vehicle, service.preview(user,
+                new PairingDtos.PreviewRequest(restored.id(), restored.qr().proof())).vehicle_id());
+    }
+
+    @Test
     void vehicleAliasFromQrBecomesRegisteredVehicleName() {
         UUID installation = service.createInstallation().installation_id();
         UUID user = UUID.randomUUID();

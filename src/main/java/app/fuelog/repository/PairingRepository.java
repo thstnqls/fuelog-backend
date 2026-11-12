@@ -259,6 +259,40 @@ public class PairingRepository {
         return alias == null || alias.isBlank() ? null : alias.trim();
     }
 
+    public void claimVin(UUID installation, byte[] hash) {
+        byte[] previous = installationVin(installation);
+        if (previous != null && !java.util.Arrays.equals(previous, hash))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "INSTALLATION_VIN_CHANGED");
+        db.update("UPDATE vehicle_installations SET vin_hash=? WHERE id=?", hash, installation.toString());
+    }
+
+    public byte[] installationVin(UUID installation) {
+        return db.queryForObject("SELECT vin_hash FROM vehicle_installations WHERE id=?", byte[].class, installation.toString());
+    }
+
+    public UUID vehicleByVin(byte[] hash) {
+        if (hash == null) return null;
+        var ids = db.query("SELECT id FROM vehicles WHERE vin_hash=?", (rs,n) -> UUID.fromString(rs.getString(1)), hash);
+        return ids.isEmpty() ? null : ids.getFirst();
+    }
+
+    public void bindVin(UUID vehicle, byte[] hash) {
+        if (hash == null) return;
+        int changed = db.update("UPDATE vehicles SET vin_hash=? WHERE id=? AND (vin_hash IS NULL OR vin_hash=?)", hash, vehicle.toString(), hash);
+        if (changed != 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "VEHICLE_VIN_CONFLICT");
+    }
+
+    public void retirePriorInstallation(UUID current, UUID vehicle, Instant now) {
+        var old = db.query("SELECT id FROM vehicle_installations WHERE vehicle_id=? AND id<>? FOR UPDATE",
+                (rs,n) -> UUID.fromString(rs.getString(1)), vehicle.toString(), current.toString());
+        for (UUID id : old) {
+            revokeForReset(id, now);
+            db.update("UPDATE trip_user_sessions SET revoked_at=? WHERE installation_id=? AND revoked_at IS NULL", time(now), id.toString());
+            db.update("UPDATE vehicle_installations SET personal_access_blocked=TRUE,access_blocked_at=?,session_version=session_version+1 WHERE id=?", time(now), id.toString());
+            unlinkInstallation(id, now);
+        }
+    }
+
     public void createVehicle(UUID vehicle, UUID request, UUID user, String name, Instant now) {
         db.update(
                 "INSERT INTO vehicles (id, name, created_by, source_request_id, created_at,"

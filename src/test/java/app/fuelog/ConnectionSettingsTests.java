@@ -63,6 +63,17 @@ class ConnectionSettingsTests {
         when(decoder.decode("owner")).thenReturn(jwt(user));when(decoder.decode("member")).thenReturn(jwt(other));
         when(decoder.decode("proof")).thenReturn(reauth(user,Instant.now().getEpochSecond()));
     }
+    @Test void renameHttpEndpointsUseInstallationAndMobileCredentials() throws Exception {
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/vehicle/name")
+                .header("Authorization", bearer).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"vehicle_name\":\"차량 이름\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/mobile/vehicles/" + vehicle + "/name")
+                .header("Authorization", "Bearer member").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"vehicle_name\":\"차량 이름\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isForbidden());
+    }
+
     @Test void renameUpdatesCanonicalVehicleNameAndRejectsNonOwner() {
         service.renameInstallationVehicle(bearer, "  출퇴근 차  ");
         assertEquals("출퇴근 차", db.queryForObject("SELECT name FROM vehicles WHERE id=?", String.class, vehicle.toString()));

@@ -123,7 +123,18 @@ public class PairingController {
             @Valid @RequestBody(required = false) PairingDtos.IssueRequest body) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(service.issue(actor.requireInstallation(installationId, secret), key,
-                        body == null ? null : body.vehicle_name()));
+                        body == null ? null : body.vehicle_name(), body == null ? null : body.vin()));
+    }
+
+    public record VinBody(@jakarta.validation.constraints.NotBlank String vin) {}
+
+    @PutMapping("/vehicle/vin")
+    public java.util.Map<String, Boolean> bindVin(
+            @RequestHeader("X-Installation-Id") UUID installation,
+            @RequestHeader("X-Installation-Secret") String secret,
+            @Valid @RequestBody VinBody body) {
+        service.bindInstallationVin(actor.requireInstallation(installation, secret), body.vin());
+        return java.util.Map.of("bound", true);
     }
 
     @GetMapping("/pairing-requests/current")

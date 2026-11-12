@@ -47,12 +47,18 @@ public class PairingService {
 
     @Transactional
     public PairingDtos.Issued issue(UUID installation, String key, String vehicleName) {
+        return issue(installation, key, vehicleName, null);
+    }
+
+    @Transactional
+    public PairingDtos.Issued issue(UUID installation, String key, String vehicleName, String vin) {
         if (vehicleName != null && (vehicleName.isBlank() || vehicleName.trim().length() > 100))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Vehicle name must be 1-100 characters");
         validKey(key);
         Instant now = Instant.now();
         repository.lockInstallation(installation);
         if (access.currentUser(installation) != null) conflict("Installation already paired");
+        if (vin != null) repository.claimVin(installation, vinHash(vin));
         if (repository.issueKeyExists(installation, key))
             conflict("Idempotency-Key already used; keep the original QR response");
         repository.expireForInstallation(installation, now);
@@ -74,6 +80,34 @@ public class PairingService {
                         Base64.getUrlEncoder().withoutPadding().encodeToString(proof)));
     }
 
+    private UUID identifiedVehicle(UUID installation) {
+        UUID attached = repository.linkedVehicle(installation);
+        UUID matched = repository.vehicleByVin(repository.installationVin(installation));
+        if (attached != null && matched != null && !attached.equals(matched)) conflict("VIN vehicle mismatch");
+        return attached != null ? attached : matched;
+    }
+
+    @Transactional
+    public void bindInstallationVin(UUID installation, String vin) {
+        repository.lockInstallation(installation);
+        UUID vehicle = repository.linkedVehicle(installation);
+        UUID user = access.currentUser(installation);
+        if (vehicle == null || user == null) forbidden();
+        requireManager(user, vehicle);
+        byte[] hash = vinHash(vin);
+        UUID existing = repository.vehicleByVin(hash);
+        if (existing != null && !existing.equals(vehicle)) conflict("VIN already linked to another vehicle");
+        repository.claimVin(installation, hash);
+        repository.bindVin(vehicle, hash);
+    }
+
+    private static byte[] vinHash(String vin) {
+        String normalized = vin == null ? "" : vin.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.matches("[A-HJ-NPR-Z0-9]{17}"))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid VIN");
+        return sha256(normalized.getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+    }
+
     @Transactional
     public PairingDtos.Status current(UUID installation) {
         repository.expireForInstallation(installation, Instant.now());
@@ -93,7 +127,8 @@ public class PairingService {
                     repository.vehicleName(request.selectedVehicleId()));
         requirePending(request);
         requireProof(request, body.proof());
-        UUID known = repository.linkedVehicle(request.installationId());
+        UUID known = identifiedVehicle(request.installationId());
+        if (known != null) requireManager(user, known);
         String vehicleName = known != null ? repository.vehicleName(known) : null;
         return new PairingDtos.Preview(request.id(), request.expiresAt(), "pending", known, vehicleName);
     }
@@ -152,7 +187,7 @@ public class PairingService {
                         confirmationCode.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
                         request.confirmationCode()
                                 .getBytes(java.nio.charset.StandardCharsets.US_ASCII))) forbidden();
-        UUID knownVehicle = repository.linkedVehicle(installation);
+        UUID knownVehicle = identifiedVehicle(installation);
         if (knownVehicle != null && !knownVehicle.equals(request.selectedVehicleId())) {
             if (request.selectedVehicleId() == null
                     && repository.userManagesVehicle(request.approvedUserId(), knownVehicle)) {
@@ -181,7 +216,10 @@ public class PairingService {
         }
 
         try {
-            if (knownVehicle == null) {
+            byte[] vin = repository.installationVin(installation);
+            repository.bindVin(vehicle, vin);
+            if (repository.linkedVehicle(installation) == null) {
+                if (vin != null && vehicle.equals(repository.vehicleByVin(vin))) repository.retirePriorInstallation(installation, vehicle, now);
                 if (!repository.linkInstallation(installation, vehicle, now)) conflict("Installation already paired");
             } else repository.resumeInstallation(installation, now);
         } catch (org.springframework.dao.DataIntegrityViolationException ex) {
@@ -257,8 +295,6 @@ public class PairingService {
 
     private PairingDtos.Status view(PairingRequest request) {
         String vehicleName = request.selectedVehicleId() == null ? request.newVehicleName() : repository.vehicleName(request.selectedVehicleId());
-        if (vehicleName == null && request.selectedVehicleId() != null)
-            vehicleName = repository.vehicleName(request.selectedVehicleId());
         return new PairingDtos.Status(
                 request.id(),
                 request.status(),
