@@ -1,6 +1,147 @@
-# Fuelog Backend
+# fuelog (풀로그)
 
-데이터 저장용 Spring Boot API 백엔드 초기 구성입니다.
+차량의 주행·연료·배터리 데이터를 개인별 차계부로 연결하고, 휴대폰에서 비용을 확인하며 공동 정비까지 관리하는 Pleos 기반 차량 관리 앱입니다.
+
+## 프로젝트 구성
+
+| 프로젝트 | 역할 |
+| --- | --- |
+| `fuelog` | Pleos Connect 차량 앱. QR 연결, 운행 기록, 주유·충전 관측, 정비 조회 |
+| `mobileappfuelog` | Android 모바일 앱. 로그인, QR 연결, 운행 달력, 차계부, 정비 관리 |
+| `fuelog-backend` (현재 저장소) | 차량·모바일 공통 REST API, 인증·접근 제어, 기록 저장 및 동기화 |
+
+센서 기반 관측·추정 비용과 사용자가 확인한 실제 지출을 구분합니다. 인원별 비용 계산은 실제 결제·송금 기능과 별개입니다.
+
+## 실행 방법
+
+### 1. 백엔드 실행
+
+JDK 21, MariaDB 및 Supabase Auth 프로젝트를 준비합니다. 이 저장소 루트에서 실행합니다.
+
+```bash
+cp .env.example .env.local
+# .env.local의 DB_URL, DB_USERNAME, DB_PASSWORD, SUPABASE_URL을 환경에 맞게 설정
+./gradlew bootRun
+```
+
+MariaDB 데이터베이스와 접속 계정은 먼저 생성해야 합니다. 자세한 내용은 [로컬 실행과 환경 설정](#로컬-실행과-env-위치)을 참고하세요.
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+### 2. 차량 앱 실행
+
+Android Studio에서 `fuelog` 프로젝트를 열고 Android SDK 36과 Pleos Connect 에뮬레이터를 준비합니다.
+`fuelog/local.properties`에 백엔드 루트 주소를 설정합니다. `/api` 경로를 추가하지 않습니다.
+
+```properties
+API_BASE_URL=http://127.0.0.1:8080/
+```
+
+로컬 백엔드를 연결할 때는 실행 중인 Pleos 기기에 포트를 연결합니다. 아래 `<PLEOS_SERIAL>`은 `adb devices`에서 확인한 기기 번호로 바꿉니다.
+
+```bash
+adb devices
+adb -s <PLEOS_SERIAL> reverse tcp:8080 tcp:8080
+```
+
+이후 **fuelog 프로젝트 루트**에서 빌드·설치하고, 에뮬레이터의 앱 목록에서 fuelog를 실행합니다.
+
+```bash
+./gradlew :app:assembleDebug
+adb -s <PLEOS_SERIAL> install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+배포용 차량 APK에는 접속 가능한 HTTPS 백엔드 주소를 설정해야 합니다. `API_BASE_URL` 변경 후에는 APK를 다시 빌드합니다.
+
+### 3. 모바일 앱 실행 및 차량 연결
+
+Android Studio에서 `mobileappfuelog` 프로젝트를 열고 `local.properties`를 설정합니다.
+
+```properties
+SUPABASE_URL=https://<PROJECT_REF>.supabase.co
+SUPABASE_ANON_KEY=<SUPABASE_PUBLIC_ANON_OR_PUBLISHABLE_KEY>
+BACKEND_BASE_URL=http://127.0.0.1:8080
+```
+
+모바일 앱과 백엔드에는 **같은 Supabase 프로젝트**를 사용합니다. 공개 클라이언트 키만 앱에 설정하며 서버 비밀 키는 넣지 않습니다.
+위 로컬 주소를 사용할 때는 모바일 테스트 기기에도 포트를 연결합니다.
+
+```bash
+adb -s <MOBILE_SERIAL> reverse tcp:8080 tcp:8080
+```
+
+**mobileappfuelog 프로젝트 루트**에서 빌드·설치합니다.
+
+```bash
+./gradlew :app:assembleDebug
+adb -s <MOBILE_SERIAL> install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+ADB 연결 없이 사용할 때는 두 앱에서 접근 가능한 백엔드 주소를 설정합니다.
+모바일 로그인 후 차량 등록 화면에서 정차 상태의 차량 QR을 스캔하고, 화면 안내에 따라 연결을 완료합니다.
+
+## 테스트 환경 및 필요한 설정
+
+| 구분 | 환경 및 설정 |
+| --- | --- |
+| 백엔드 | Java 21, Spring Boot 4.1.2, MariaDB 11.4. Gradle Wrapper 사용 |
+| 백엔드 자동 테스트 | H2 인메모리 DB, `test` 프로파일. 실제 MariaDB·외부 서비스 통합 검증과 구분 |
+| 차량 앱 | compile/target SDK 36, min SDK 28, Java 17 소스 설정 |
+| 차량 SDK | Pleos Vehicle SDK 2.3.2, FusedLocation SDK 1.1.3. 프로젝트의 Pleos Maven 저장소 설정 사용 |
+| 모바일 앱 | compile/target SDK 36, min SDK 26, Java 11 소스 설정 |
+| 인증·연결 | Supabase 로그인 계정, 동일 프로젝트의 JWT 검증 설정, 접근 가능한 백엔드 |
+| 차량 기능 | 대상 차량·이미지의 속성 지원과 권한 필요. QR·상세 조작은 주행 제한이 해제된 정차 상태에서 확인 |
+| 선택 기능 | 위치 보조·알림은 해당 동의와 OS 권한 필요. 주유소 조회는 `OPINET_KEY`, 검증된 `OPINET_KATEC_PROJ4`, `PLEOS_COORDINATE_SYSTEM` 설정 필요 |
+| 충전 참고 비용 | 최신 충전소 카탈로그와 적용 시점에 유효한 참고요금 필요. 근거 부족 시 금액을 제공하지 않을 수 있음 |
+
+각 프로젝트 루트에서 실행하는 검증 명령입니다.
+
+```bash
+# fuelog-backend
+./gradlew test bootJar
+
+# fuelog
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+
+# mobileappfuelog
+./gradlew :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+```
+
+에뮬레이터의 가상 차량 데이터는 실차 측정값이 아닙니다. 실차 센서 정확도, 절전·시동 복귀 및 외부 API의 운영 환경 동작은 별도 검증이 필요합니다.
+
+## Pleos Connect 에뮬레이터 버전과 화면 규격
+
+| 항목 | 개발 환경 |
+| --- | --- |
+| Pleos Connect 에뮬레이터 이미지 | **v2.1.0**, AVD 이름 `Pleos_Connect_v2.1.0` |
+| Android 이미지 | Android API 34, `pleos_car_emulator`, ARM64 (`arm64-v8a`) |
+| 기본 화면 | **2560 × 1440 px**, 가로 방향 |
+| 기본 밀도 | **160 dpi** (AVD 설정 기준) |
+| 추가 레이아웃 측정 | 840 × 1184, 1184 × 840, 480 × 700 크기의 창과 키보드 여백 표시·해제 |
+
+기본 규격은 개발 AVD의 `config.ini` 설정값이며, 시스템 UI·멀티윈도우에 따라 앱에 할당되는 영역은 달라집니다.
+추가 크기는 차량 앱의 레이아웃 측정 테스트 기록 기준으로, 모든 폼팩터의 실차·육안 검증 완료를 뜻하지 않습니다.
+Pleos 이미지 v2.1.0과 Android Emulator 실행 도구 버전은 서로 다른 버전입니다.
+
+## APK 파일 위치
+
+경로는 **각 Android 프로젝트 루트 기준**입니다. APK는 이 백엔드 저장소에 포함되어 있지 않습니다.
+
+| 앱 | 파일 위치 | 용도 |
+| --- | --- | --- |
+| 차량 앱 `fuelog` | `app/build/outputs/apk/debug/app-debug.apk` | 디버그 빌드 및 개발 테스트 |
+| 차량 앱 `fuelog` | `app/build/outputs/apk/release/app-release.apk` | 현재 로컬 릴리스 산출물. 재빌드 시 `.signing/release.properties` 서명 설정 필요 |
+| 모바일 앱 `mobileappfuelog` | `apk/` 디렉터리의 제출용 `.apk` | 별도 보관된 제출 파일 |
+| 모바일 앱 `mobileappfuelog` | `app/build/outputs/apk/debug/app-debug.apk` | 위 `assembleDebug` 명령으로 생성하는 개발 테스트 파일 |
+
+모바일 빌드 출력의 `app-release-unsigned.apk`는 서명 전 산출물이므로 설치용 APK와 구분합니다.
+GitHub Release 다운로드 링크는 이 README에 등록되어 있지 않습니다. 제출 시 해당 프로젝트의 APK 파일을 함께 제공합니다.
+
+---
+
+# 백엔드 개발 및 API 안내
 
 ## 기술 구성
 
