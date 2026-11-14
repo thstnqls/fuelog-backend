@@ -84,6 +84,12 @@ public class MaintenanceController {
         return result;
     }
 
+    @PostMapping("/maintenance/manufacturer-defaults/{evidenceId}/start")
+    @Operation(summary="제조사 기본 항목 선택·첫 완료 기록·다음 계획 원자적 저장")
+    public Completion startManufacturerDefault(@RequestHeader(value="Authorization",required=false) String bearer,
+            @PathVariable UUID evidenceId,@RequestHeader(value="Idempotency-Key",required=false) String key,
+            @Valid @RequestBody CompletionInput body) {return service.startManufacturerDefault(bearer,evidenceId,key,body);}
+
     @PostMapping("/maintenance/plans/{itemId}/complete")
     @Operation(summary = "차량 오너의 정비 완료 확인 및 다음 회차 생성",
             description = "설치 Bearer로 인증된 현재 차량 OWNER만 공동 계획을 완료할 수 있습니다. "

@@ -1,6 +1,8 @@
 package app.fuelog.repository;
 
-import app.fuelog.common.TimeUtils;
+import static app.fuelog.common.TimeUtils.toInstant;
+import static app.fuelog.common.TimeUtils.toLocalDateTime;
+
 import app.fuelog.entity.PairingRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -24,7 +26,7 @@ public class PairingRepository {
                             UUID.fromString(rs.getString("installation_id")),
                             rs.getBytes("proof_hash"),
                             rs.getString("status"),
-                            utc(rs.getObject("expires_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("expires_at", LocalDateTime.class)),
                             uuid(rs.getString("selected_vehicle_id")),
                             rs.getString("new_vehicle_name"),
                             uuid(rs.getString("approved_user_id")),
@@ -42,8 +44,8 @@ public class PairingRepository {
                         + " VALUES (?, ?, ?, ?)",
                 installation.toString(),
                 credentialHash,
-                time(now),
-                time(now));
+                toLocalDateTime(now),
+                toLocalDateTime(now));
     }
 
     public byte[] credentialHash(UUID installation) {
@@ -70,8 +72,8 @@ public class PairingRepository {
                         + " VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE id=id",
                 UUID.randomUUID().toString(),
                 hash,
-                time(now),
-                time(now));
+                toLocalDateTime(now),
+                toLocalDateTime(now));
         List<String> rows =
                 db.query(
                         "SELECT id FROM vehicle_installations WHERE credential_hash=? FOR UPDATE",
@@ -124,9 +126,9 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='expired', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE installation_id=? AND status IN"
                         + " ('pending','awaiting_vehicle_confirmation') AND expires_at<=?",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString(),
-                time(now));
+                toLocalDateTime(now));
     }
 
     public void revokeActive(UUID installation, Instant now) {
@@ -134,7 +136,7 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='revoked', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE installation_id=? AND status IN"
                         + " ('pending','awaiting_vehicle_confirmation')",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -148,10 +150,10 @@ public class PairingRepository {
                 installation.toString(),
                 installation.toString(),
                 hash,
-                time(expires),
+                toLocalDateTime(expires),
                 key,
-                time(now),
-                time(now));
+                toLocalDateTime(now),
+                toLocalDateTime(now));
     }
 
     public PairingRequest current(UUID installation) {
@@ -196,7 +198,7 @@ public class PairingRepository {
                 user.toString(),
                 key,
                 code,
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -229,7 +231,7 @@ public class PairingRepository {
                 vehicle.toString(),
                 user.toString(),
                 role,
-                time(now));
+                toLocalDateTime(now));
     }
 
     public void promoteToManager(UUID user, UUID vehicle) {
@@ -287,8 +289,8 @@ public class PairingRepository {
                 (rs,n) -> UUID.fromString(rs.getString(1)), vehicle.toString(), current.toString());
         for (UUID id : old) {
             revokeForReset(id, now);
-            db.update("UPDATE trip_user_sessions SET revoked_at=? WHERE installation_id=? AND revoked_at IS NULL", time(now), id.toString());
-            db.update("UPDATE vehicle_installations SET personal_access_blocked=TRUE,access_blocked_at=?,session_version=session_version+1 WHERE id=?", time(now), id.toString());
+            db.update("UPDATE trip_user_sessions SET revoked_at=? WHERE installation_id=? AND revoked_at IS NULL", toLocalDateTime(now), id.toString());
+            db.update("UPDATE vehicle_installations SET personal_access_blocked=TRUE,access_blocked_at=?,session_version=session_version+1 WHERE id=?", toLocalDateTime(now), id.toString());
             unlinkInstallation(id, now);
         }
     }
@@ -301,14 +303,14 @@ public class PairingRepository {
                 name,
                 user.toString(),
                 request.toString(),
-                time(now),
-                time(now));
+                toLocalDateTime(now),
+                toLocalDateTime(now));
         db.update(
                 "INSERT INTO group_members (vehicle_id, user_id, role, created_at) VALUES"
                         + " (?,?,'OWNER',?)",
                 vehicle.toString(),
                 user.toString(),
-                time(now));
+                toLocalDateTime(now));
     }
 
     public boolean linkInstallation(UUID installation, UUID vehicle, Instant now) {
@@ -317,14 +319,14 @@ public class PairingRepository {
                                 + " registration_version=registration_version+1, updated_at=? WHERE"
                                 + " id=? AND vehicle_id IS NULL",
                         vehicle.toString(),
-                        time(now),
+                        toLocalDateTime(now),
                         installation.toString())
                 == 1;
     }
 
     public void resumeInstallation(UUID installation, Instant now) {
         db.update("UPDATE vehicle_installations SET personal_access_blocked=FALSE,access_blocked_at=NULL,updated_at=? WHERE id=?",
-                time(now), installation.toString());
+                toLocalDateTime(now), installation.toString());
     }
 
     public void complete(UUID request, UUID vehicle, Instant now) {
@@ -332,7 +334,7 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='completed', active_installation_id=NULL,"
                         + " selected_vehicle_id=?, proof_hash=NULL, updated_at=? WHERE id=?",
                 vehicle.toString(),
-                time(now),
+                toLocalDateTime(now),
                 request.toString());
     }
 
@@ -344,7 +346,7 @@ public class PairingRepository {
                 vehicle.toString(),
                 user.toString(),
                 key,
-                time(now),
+                toLocalDateTime(now),
                 request.toString());
     }
 
@@ -352,7 +354,7 @@ public class PairingRepository {
         db.update(
                 "UPDATE vehicle_installations SET vehicle_id=NULL,"
                         + " registration_version=registration_version+1, updated_at=? WHERE id=?",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -361,7 +363,7 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='revoked', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE installation_id=? AND status IN"
                         + " ('pending','awaiting_vehicle_confirmation','completed')",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -370,7 +372,7 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='expired', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE id=? AND status IN"
                         + " ('pending','awaiting_vehicle_confirmation')",
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -379,19 +381,11 @@ public class PairingRepository {
                 "UPDATE pairing_requests SET status='revoked', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE id=? AND status IN"
                         + " ('pending','awaiting_vehicle_confirmation')",
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
     private static UUID uuid(String value) {
         return value == null ? null : UUID.fromString(value);
-    }
-
-    private static LocalDateTime time(Instant instant) {
-        return TimeUtils.toLocalDateTime(instant);
-    }
-
-    private static Instant utc(LocalDateTime value) {
-        return TimeUtils.toInstant(value);
     }
 }

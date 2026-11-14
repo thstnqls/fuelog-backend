@@ -1,6 +1,8 @@
 package app.fuelog.repository;
 
-import app.fuelog.common.TimeUtils;
+import static app.fuelog.common.TimeUtils.toInstant;
+import static app.fuelog.common.TimeUtils.toLocalDateTime;
+
 import app.fuelog.dto.TripUserCandidateDtos;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -51,8 +53,8 @@ public class TripUserCandidateRepository {
                             rs.getBytes("proof_fingerprint"),
                             rs.getString("verified_operation_id"),
                             rs.getString("status"),
-                            instant(rs.getObject("expires_at", LocalDateTime.class)),
-                            instant(rs.getObject("verification_expires_at", LocalDateTime.class)));
+                            toInstant(rs.getObject("expires_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("verification_expires_at", LocalDateTime.class)));
 
     public Candidate get(UUID id, boolean lock) {
         List<Candidate> rows =
@@ -108,7 +110,7 @@ public class TripUserCandidateRepository {
                 installation.toString(),
                 vehicle.toString(),
                 interval.toString(),
-                time(now));
+                toLocalDateTime(now));
     }
 
     public boolean memberForUpdate(UUID user, UUID vehicle) {
@@ -135,9 +137,9 @@ public class TripUserCandidateRepository {
                 value.displayName(),
                 value.consentOperationId(),
                 value.proofFingerprint(),
-                time(value.expiresAt()),
-                time(now),
-                time(now));
+                toLocalDateTime(value.expiresAt()),
+                toLocalDateTime(now),
+                toLocalDateTime(now));
     }
 
     public void markChallengeConsented(UUID id, UUID user, String displayName, Instant now) {
@@ -147,7 +149,7 @@ public class TripUserCandidateRepository {
                         + " id=? AND status='pending'",
                 user.toString(),
                 displayName,
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -156,8 +158,8 @@ public class TripUserCandidateRepository {
                 "UPDATE trip_user_candidates SET status='verified', verified_operation_id=?,"
                         + " verification_expires_at=?, updated_at=? WHERE id=? AND status='active'",
                 operation,
-                time(expiresAt),
-                time(now),
+                toLocalDateTime(expiresAt),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -165,7 +167,7 @@ public class TripUserCandidateRepository {
         db.update(
                 "UPDATE trip_user_candidates SET status='revoked', updated_at=? WHERE id=? AND"
                         + " status IN ('active','verified','expired')",
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -173,16 +175,16 @@ public class TripUserCandidateRepository {
         return db.update(
                 "UPDATE trip_user_candidates SET status='expired', updated_at=? WHERE"
                         + " installation_id=? AND status='active' AND expires_at<=?",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString(),
-                time(now));
+                toLocalDateTime(now));
     }
 
     public int revokeForInstallation(UUID installation, Instant now) {
         return db.update(
                 "UPDATE trip_user_candidates SET status='revoked', updated_at=? WHERE"
                         + " installation_id=? AND status IN ('active','verified')",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -198,7 +200,7 @@ public class TripUserCandidateRepository {
                 installation.toString(),
                 revision,
                 type,
-                time(now));
+                toLocalDateTime(now));
         return revision;
     }
 
@@ -223,13 +225,5 @@ public class TripUserCandidateRepository {
 
     private static UUID id(String value) {
         return value == null ? null : UUID.fromString(value);
-    }
-
-    private static LocalDateTime time(Instant value) {
-        return TimeUtils.toLocalDateTime(value);
-    }
-
-    private static Instant instant(LocalDateTime value) {
-        return value == null ? null : TimeUtils.toInstant(value);
     }
 }

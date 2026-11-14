@@ -89,7 +89,7 @@ public class ChargeCandidateService {
                 || b.receivedAt().isAfter(now.plusSeconds(5)) || b.receivedAt().isBefore(now.minusSeconds(120))) fail(400,"INVALID_LOCATION_EVIDENCE");
         var slow="WGS84".equals(coordinateSystem) ? estimates.slowTripEstimate(b.latitude(),b.longitude(),p.estimatedKwh(),Instant.ofEpochMilli(p.startAt()),now) : null;
         var scenarios=slow==null ? List.<Scenario>of() : List.of(slow);
-        String status=!"WGS84".equals(coordinateSystem) ? "COORDINATE_SYSTEM_UNVERIFIED" : scenarios.isEmpty() ? "INSUFFICIENT_COMPARABLE_STATIONS" : scenarios.size()==1 ? "REFERENCE_ESTIMATE" : "POWER_BAND_SELECTION_REQUIRED";
+        String status=!"WGS84".equals(coordinateSystem) ? "COORDINATE_SYSTEM_UNVERIFIED" : scenarios.isEmpty() ? "INSUFFICIENT_COMPARABLE_STATIONS" : "REFERENCE_ESTIMATE";
         View result=save(new View(p.id(),p.intervalId(),p.owner(),p.status(),p.revision()+1,p.startAt(),p.endAt(),p.estimatedKwh(),p.basis(),status,scenarios,p.correctedKwh(),p.correctedAmount(),p.correctedPlace()));
         // Coordinates are consumed in this transaction and are never persisted or logged.
         db.update("UPDATE charge_candidates SET location_operation_id=? WHERE id=?",b.locationOperationId(),id.toString());

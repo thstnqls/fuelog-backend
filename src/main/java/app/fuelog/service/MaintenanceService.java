@@ -119,7 +119,7 @@ public class MaintenanceService {
                         .toList();
         UUID editor = access.currentUser(auth.require(bearer).id());
         boolean canEdit = editor != null && "OWNER".equals(repo.role(vehicle, editor));
-        return new Summary(repo.revision(vehicle), odometer, items, canEdit, canEdit ? editor : null);
+        return new Summary(repo.revision(vehicle), odometer, items, canEdit, canEdit ? editor : null,repo.manufacturerDefaults(vehicle),repo.completedServices(vehicle));
     }
 
     @Transactional
@@ -251,6 +251,25 @@ public class MaintenanceService {
         recalculate(vehicle, item);
         repo.bump(vehicle);
         return view(repo.plan(vehicle, item));
+    }
+
+    @Transactional
+    public Completion startManufacturerDefault(String bearer,UUID evidenceId,String key,CompletionInput input) {
+        var owner=deviceOwner(bearer);validateBean(input);
+        if(key==null || key.isBlank() || key.length()>100) fail(HttpStatus.BAD_REQUEST,"IDEMPOTENCY_KEY_REQUIRED");
+        EventRow previous=repo.forKey(owner.vehicle(),owner.user(),key);
+        if(previous!=null) {
+            PlanRow plan=requirePlan(owner.vehicle(),previous.item());
+            if(!evidenceId.equals(plan.evidence()) || plan.completedAt()==null) fail(HttpStatus.CONFLICT,"IDEMPOTENCY_KEY_REUSED");
+            return complete(owner.user(),owner.vehicle(),plan.id(),Long.toString(plan.revision()),key,input);
+        }
+        var selected=repo.manufacturerDefaults(owner.vehicle()).stream().filter(e->evidenceId.equals(e.id())).findFirst()
+                .orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"MANUFACTURER_DEFAULT_NOT_FOUND"));
+        if(selected.evidence()==null || !selected.evidence().verified()) fail(HttpStatus.UNPROCESSABLE_CONTENT,"MANUFACTURER_EVIDENCE_UNVERIFIED");
+        if(selected.activePlanId()!=null) fail(HttpStatus.CONFLICT,"MANUFACTURER_PLAN_ALREADY_ACTIVE");
+        UUID first=UUID.randomUUID();
+        putPlan(owner.user(),owner.vehicle(),first,null,new PlanInput(selected.name(),true,Basis.MANUFACTURER,evidenceId,selected.intervalKm(),selected.intervalMonths()));
+        return complete(owner.user(),owner.vehicle(),first,"1",key,input);
     }
 
     @Transactional

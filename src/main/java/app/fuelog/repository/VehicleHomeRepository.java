@@ -1,6 +1,8 @@
 package app.fuelog.repository;
 
-import app.fuelog.common.TimeUtils;
+import static app.fuelog.common.TimeUtils.toInstant;
+import static app.fuelog.common.TimeUtils.toLocalDateTime;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -81,7 +83,7 @@ public class VehicleHomeRepository {
                             id(rs.getString("interval_id")),
                             rs.getBytes("proof_hash"),
                             rs.getString("status"),
-                            instant(rs.getObject("expires_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("expires_at", LocalDateTime.class)),
                             id(rs.getString("approved_user_id")),
                             rs.getString("display_name"),
                             id(rs.getString("session_id")));
@@ -96,7 +98,7 @@ public class VehicleHomeRepository {
                             rs.getLong("version"),
                             rs.getBytes("token_hash"),
                             rs.getString("status"),
-                            instant(rs.getObject("expires_at", LocalDateTime.class)));
+                            toInstant(rs.getObject("expires_at", LocalDateTime.class)));
     private final RowMapper<Interval> intervalMapper =
             (rs, n) ->
                     new Interval(
@@ -108,13 +110,13 @@ public class VehicleHomeRepository {
                             rs.getString("local_interval_id"),
                             rs.getString("source"),
                             rs.getString("status"),
-                            instant(rs.getObject("started_at", LocalDateTime.class)),
-                            instant(rs.getObject("ended_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("started_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("ended_at", LocalDateTime.class)),
                             rs.getString("finish_operation_id"),
                             rs.getObject("finish_last_sequence", Long.class),
                             rs.getLong("last_accepted_sequence"),
-                            instant(rs.getObject("last_sample_at", LocalDateTime.class)),
-                            instant(rs.getObject("last_synced_at", LocalDateTime.class)));
+                            toInstant(rs.getObject("last_sample_at", LocalDateTime.class)),
+                            toInstant(rs.getObject("last_synced_at", LocalDateTime.class)));
 
     public long sessionVersion(UUID installation) {
         Long value =
@@ -148,7 +150,7 @@ public class VehicleHomeRepository {
                         (rs, n) ->
                                 new Vehicle(
                                         rs.getString(1),
-                                        instant(rs.getObject(2, LocalDateTime.class))),
+                                        toInstant(rs.getObject(2, LocalDateTime.class))),
                         vehicle.toString());
         if (rows.isEmpty())
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "VEHICLE_NOT_FOUND");
@@ -182,7 +184,7 @@ public class VehicleHomeRepository {
         db.update(
                 "UPDATE trip_user_challenges SET status='revoked', active_installation_id=NULL,"
                     + " proof_hash=NULL, updated_at=? WHERE installation_id=? AND status='pending'",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -205,17 +207,17 @@ public class VehicleHomeRepository {
                 interval == null ? null : interval.toString(),
                 operationId,
                 proofHash,
-                time(expires),
+                toLocalDateTime(expires),
                 installation.toString(),
-                time(now),
-                time(now));
+                toLocalDateTime(now),
+                toLocalDateTime(now));
     }
 
     public void expireChallenge(UUID id, Instant now) {
         db.update(
                 "UPDATE trip_user_challenges SET status='expired', active_installation_id=NULL,"
                         + " proof_hash=NULL, updated_at=? WHERE id=? AND status='pending'",
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -228,7 +230,7 @@ public class VehicleHomeRepository {
                 user.toString(),
                 displayName,
                 session.toString(),
-                time(now),
+                toLocalDateTime(now),
                 id.toString());
     }
 
@@ -254,7 +256,7 @@ public class VehicleHomeRepository {
         db.update(
                 "UPDATE trip_user_sessions SET status='revoked', active_installation_id=NULL,"
                         + " revoked_at=? WHERE installation_id=? AND status='active'",
-                time(now),
+                toLocalDateTime(now),
                 installation.toString());
     }
 
@@ -278,9 +280,9 @@ public class VehicleHomeRepository {
                 displayName,
                 version,
                 null,
-                time(expires),
+                toLocalDateTime(expires),
                 installation.toString(),
-                time(now));
+                toLocalDateTime(now));
     }
 
     public void replaceSessionTokenHash(UUID id, byte[] hash) {
@@ -375,9 +377,9 @@ public class VehicleHomeRepository {
                 user == null ? null : user.toString(),
                 sessionVersion,
                 localId,
-                time(startedAt),
-                time(now),
-                time(now));
+                toLocalDateTime(startedAt),
+                toLocalDateTime(now),
+                toLocalDateTime(now));
     }
 
     public Batch batch(UUID interval, String batchId) {
@@ -390,7 +392,7 @@ public class VehicleHomeRepository {
                                         rs.getBytes(1),
                                         rs.getInt(2),
                                         rs.getLong(3),
-                                        instant(rs.getObject(4, LocalDateTime.class))),
+                                        toInstant(rs.getObject(4, LocalDateTime.class))),
                         interval.toString(),
                         batchId);
         return rows.isEmpty() ? null : rows.getFirst();
@@ -415,12 +417,12 @@ public class VehicleHomeRepository {
                 interval.toString(),
                 sequence,
                 batch,
-                time(observedAt),
+                toLocalDateTime(observedAt),
                 distance,
                 missingReason,
                 fuel,
                 fuelStatus,
-                time(now),
+                toLocalDateTime(now),
                 user == null ? null : user.toString(),
                 candidate == null ? null : candidate.toString());
     }
@@ -436,7 +438,7 @@ public class VehicleHomeRepository {
                 hash,
                 count,
                 lastSequence,
-                time(now));
+                toLocalDateTime(now));
     }
 
     public void updateIntervalAfterSamples(
@@ -447,10 +449,10 @@ public class VehicleHomeRepository {
                     + " last_sample_at=CASE WHEN last_sample_at IS NULL OR last_sample_at<? THEN ?"
                     + " ELSE last_sample_at END, last_synced_at=?, updated_at=? WHERE id=?",
                 sequence,
-                time(lastObservedAt),
-                time(lastObservedAt),
-                time(now),
-                time(now),
+                toLocalDateTime(lastObservedAt),
+                toLocalDateTime(lastObservedAt),
+                toLocalDateTime(now),
+                toLocalDateTime(now),
                 interval.toString());
     }
 
@@ -460,10 +462,10 @@ public class VehicleHomeRepository {
                 "UPDATE recording_intervals SET status='finished', ended_at=?,"
                     + " finish_operation_id=?, finish_last_sequence=?, updated_at=? WHERE id=? AND"
                     + " status='recording'",
-                time(endedAt),
+                toLocalDateTime(endedAt),
                 operationId,
                 lastSequence,
-                time(now),
+                toLocalDateTime(now),
                 interval.toString());
     }
 
@@ -476,7 +478,7 @@ public class VehicleHomeRepository {
                         (rs, n) ->
                                 new Distance(
                                         rs.getBigDecimal(1),
-                                        instant(rs.getObject(2, LocalDateTime.class))),
+                                        toInstant(rs.getObject(2, LocalDateTime.class))),
                         vehicle.toString(),
                         user.toString());
         return rows.getFirst();
@@ -492,7 +494,7 @@ public class VehicleHomeRepository {
                         (rs, n) ->
                                 new Fuel(
                                         rs.getString(1),
-                                        instant(rs.getObject(2, LocalDateTime.class))),
+                                        toInstant(rs.getObject(2, LocalDateTime.class))),
                         vehicle.toString(),
                         user.toString());
         return rows.isEmpty() ? null : rows.getFirst();
@@ -500,13 +502,5 @@ public class VehicleHomeRepository {
 
     private static UUID id(String text) {
         return text == null ? null : UUID.fromString(text);
-    }
-
-    private static LocalDateTime time(Instant value) {
-        return TimeUtils.toLocalDateTime(value);
-    }
-
-    private static Instant instant(LocalDateTime value) {
-        return value == null ? null : TimeUtils.toInstant(value);
     }
 }

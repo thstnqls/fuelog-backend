@@ -1,6 +1,8 @@
 package app.fuelog.repository;
 
-import app.fuelog.common.TimeUtils;
+import static app.fuelog.common.TimeUtils.toInstant;
+import static app.fuelog.common.TimeUtils.toLocalDateTime;
+
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -55,7 +57,7 @@ public class TripSummaryRepository {
                             r.getLong("revision"),
                             r.getBytes("payload_hash"),
                             r.getString("payload"),
-                            instant(r.getObject("synced_at", LocalDateTime.class)));
+                            toInstant(r.getObject("synced_at", LocalDateTime.class)));
     private final RowMapper<Item> itemMapper =
             (r, n) ->
                     new Item(
@@ -65,8 +67,8 @@ public class TripSummaryRepository {
                             r.getLong("summary_id"),
                             r.getLong("trip_revision"),
                             r.getString("snapshot"),
-                            instant(r.getObject("delivered_at", LocalDateTime.class)),
-                            instant(r.getObject("read_at", LocalDateTime.class)),
+                            toInstant(r.getObject("delivered_at", LocalDateTime.class)),
+                            toInstant(r.getObject("read_at", LocalDateTime.class)),
                             r.getString("kind"),
                             id(r.getString("candidate_id")),
                             r.getObject("candidate_revision", Long.class));
@@ -106,7 +108,7 @@ public class TripSummaryRepository {
                     revision,
                     hash,
                     payload,
-                    time(now));
+                    toLocalDateTime(now));
         else
             db.update(
                     "UPDATE trip_summaries SET revision=?,payload_hash=?,payload=?,synced_at=?"
@@ -114,7 +116,7 @@ public class TripSummaryRepository {
                     revision,
                     hash,
                     payload,
-                    time(now),
+                    toLocalDateTime(now),
                     installation.toString(),
                     trip.toString(),
                     revision);
@@ -142,7 +144,7 @@ public class TripSummaryRepository {
                     trip.id(),
                     trip.revision(),
                     snapshot,
-                    time(now));
+                    toLocalDateTime(now));
         else
             db.update(
                     "UPDATE mobile_trip_inbox SET trip_revision=?,snapshot=?,read_at=NULL WHERE"
@@ -183,7 +185,7 @@ public class TripSummaryRepository {
     public void read(long id, Instant at) {
         db.update(
                 "UPDATE mobile_trip_inbox SET read_at=COALESCE(read_at,?) WHERE id=?",
-                time(at),
+                toLocalDateTime(at),
                 id);
     }
 
@@ -193,13 +195,5 @@ public class TripSummaryRepository {
 
     private static String string(UUID id) {
         return id == null ? null : id.toString();
-    }
-
-    private static LocalDateTime time(Instant at) {
-        return TimeUtils.toLocalDateTime(at);
-    }
-
-    private static Instant instant(LocalDateTime at) {
-        return at == null ? null : TimeUtils.toInstant(at);
     }
 }

@@ -211,7 +211,7 @@ public class MobileMaintenanceController {
                     "모바일의 Supabase JWT가 필요합니다. 생성 시 새 itemId UUID를 사용하고, 기존 계획 변경·재활성화 시 현재"
                         + " revision을 If-Match로 보내세요. 공동 계획 쓰기는 OWNER/MANAGER만 가능합니다.\n\n"
                         + "intervalKm 또는 intervalMonths가 필요합니다. basis=USER는 사용자 기준, MANUFACTURER는"
-                        + " 제조사 기준입니다. 제조사 기준은 검증된 evidenceId와 차종·연식·주기가 일치해야 하며 검증 실패는 422입니다.")
+                        + " 제조사 기준입니다. 제조사 기준은 검증된 evidenceId와 항목명·주기가 일치해야 하며 검증 실패는 422입니다. 차종·연식 일치 검사는 생략합니다.")
     @ApiResponse(
             responseCode = "200",
             description = "계획·예정과 설정 revision ETag",

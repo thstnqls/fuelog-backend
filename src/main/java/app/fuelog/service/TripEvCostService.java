@@ -30,13 +30,13 @@ public class TripEvCostService {
     @Transactional
     public EvCostResult get(String bearer,UUID trip) {
         var row=authorized(bearer,trip);
-        SavedEvCost cost=existing(row);
+        SavedEvCost cost=preserveExisting(row);
         return new EvCostResult(trip,row.user(),cost==null?"LOCATION_REQUIRED":"SAVED",cost);
     }
     @Transactional
     public EvCostResult calculate(String bearer,UUID trip,EvCostLocation b) {
         var row=authorized(bearer,trip);
-        SavedEvCost cost=existing(row);
+        SavedEvCost cost=preserveExisting(row);
         if(cost!=null) return new EvCostResult(trip,row.user(),"SAVED",cost);
         Upload upload=json.readValue(row.payload(),Upload.class);
         var energy=TripSummaryService.calculate(upload,row.syncedAt()).energyConsumedKwh().value();
@@ -72,8 +72,7 @@ public class TripEvCostService {
         var rows=db.query("SELECT payload FROM trip_ev_costs WHERE summary_id=?",(r,n)->json.readValue(r.getString(1),SavedEvCost.class),summaryId);
         return rows.isEmpty()?null:rows.getFirst();
     }
-    public SavedEvCost preserveExisting(TripSummaryRepository.Trip row) { return existing(row); }
-    private SavedEvCost existing(TripSummaryRepository.Trip row) {
+    public SavedEvCost preserveExisting(TripSummaryRepository.Trip row) {
         SavedEvCost saved=stored(row.id());if(saved!=null) return saved;
         if(!legacyEligible(row.id())) return null;
         Upload upload=json.readValue(row.payload(),Upload.class);

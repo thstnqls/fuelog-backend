@@ -95,7 +95,11 @@ public final class MaintenanceDtos {
     public record Summary(
             @Schema(description = "서버 저장 데이터의 버전. 변경할 때 증가합니다.") long revision,
             Odometer odometer,
-            List<SummaryItem> items, boolean canEdit, UUID editorSubjectId) {}
+            List<SummaryItem> items, boolean canEdit, UUID editorSubjectId,
+            List<ManufacturerDefault> manufacturerDefaults, List<CompletedService> completedServices) {}
+
+    public record ManufacturerDefault(UUID id,String name,BigDecimal intervalKm,Integer intervalMonths,Evidence evidence,UUID activePlanId) {}
+    public record CompletedService(UUID id,String name,LocalDate serviceDate,BigDecimal odometerKm,UUID nextPlanId) {}
 
     @Schema(name = "MaintenancePlanInput")
     public record PlanInput(

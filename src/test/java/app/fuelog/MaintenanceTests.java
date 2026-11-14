@@ -449,6 +449,60 @@ class MaintenanceTests {
         assertEquals(1,count("maintenance_events"));
     }
 
+    @Test
+    void defaultsExistBeforePlansAndStartSavesOneCompletedAndOneNextPlan() throws Exception {
+        UUID evidence=manufacturerDefault();authenticateDevice(owner);
+        var catalog=service.summary(bearer).manufacturerDefaults();
+        assertEquals(1,catalog.size());assertTrue(catalog.getFirst().evidence().verified());assertNull(catalog.getFirst().activePlanId());
+        assertTrue(service.summary(bearer).items().isEmpty());
+        LocalDate start=LocalDate.now(ZoneId.of("Asia/Seoul")).minusDays(10);
+        CompletionInput input=new CompletionInput(true,start,new BigDecimal("10000"));
+        var first=service.startManufacturerDefault(bearer,evidence,"default-start",input);
+        assertEquals(PlanStatus.COMPLETE,first.completedPlan().status());
+        assertEquals(start,first.event().serviceDate());assertEquals(start.plusMonths(12),first.nextPlan().nextDueDate());
+        equal("20000",first.nextPlan().nextDueKm());
+        for(int i=0;i<3;i++) assertEquals(first,service.startManufacturerDefault(bearer,evidence,"default-start",input));
+        assertEquals(2,count("maintenance_plans"));assertEquals(1,count("maintenance_events"));
+        var summary=service.summary(bearer);
+        assertEquals(first.nextPlan().id(),summary.items().getFirst().id());
+        assertEquals(first.nextPlan().id(),summary.manufacturerDefaults().getFirst().activePlanId());
+        assertEquals(start,summary.completedServices().getFirst().serviceDate());
+        denied(409,()->service.startManufacturerDefault(bearer,evidence,"another-start",input));
+        denied(409,()->service.startManufacturerDefault(bearer,evidence,"default-start",new CompletionInput(true,start.minusDays(1),new BigDecimal("10000"))));
+        mvc.perform(get("/maintenance/summary").header("Authorization",bearer)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.manufacturerDefaults[0].id").value(evidence.toString()))
+                .andExpect(jsonPath("$.completedServices[0].name").value("oil"));
+    }
+
+    @Test
+    void startingDefaultRollsBackInvalidBaselineAndChecksVehicleAndOwner() throws Exception {
+        UUID evidence=manufacturerDefault();authenticateDevice(owner);
+        LocalDate today=LocalDate.now(ZoneId.of("Asia/Seoul"));
+        denied(400,()->service.startManufacturerDefault(bearer,evidence,"missing-km",new CompletionInput(true,today,null)));
+        assertEquals(0,count("maintenance_plans"));assertEquals(0,count("maintenance_events"));
+        db.update("DELETE FROM vehicle_maintenance_profiles WHERE vehicle_id=?",vehicle.toString());
+        assertTrue(service.summary(bearer).manufacturerDefaults().getFirst().evidence().verified(), "Vehicle profile is no longer required");
+        db.update("UPDATE maintenance_manufacturer_evidence SET document_url='http://example.test/manual' WHERE id=?",evidence.toString());
+        denied(422,()->service.startManufacturerDefault(bearer,evidence,"unverified",new CompletionInput(true,today,BigDecimal.ZERO)));
+        db.update("UPDATE maintenance_manufacturer_evidence SET document_url='https://example.test/manual' WHERE id=?",evidence.toString());
+        authenticateDevice(member);
+        denied(403,()->service.startManufacturerDefault(bearer,evidence,"member",new CompletionInput(true,today,BigDecimal.ZERO)));
+        authenticateDevice(owner);db.update("UPDATE vehicle_maintenance_profiles SET model='model' WHERE vehicle_id=?",vehicle.toString());
+        String path="/maintenance/manufacturer-defaults/"+evidence+"/start";
+        mvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new CompletionInput(true,today,BigDecimal.ZERO)))) .andExpect(status().isUnauthorized());
+        mvc.perform(post(path).header("Authorization",bearer).header("Idempotency-Key","http-start")
+                .contentType(MediaType.APPLICATION_JSON).content(json.writeValueAsString(new CompletionInput(true,today,new BigDecimal("12345")))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.completedPlan.status").value("COMPLETE"))
+                .andExpect(jsonPath("$.nextPlan.active").value(true));
+    }
+
+    private UUID manufacturerDefault() {
+        UUID evidence=UUID.randomUUID();
+        db.update("INSERT INTO vehicle_maintenance_profiles (vehicle_id,manufacturer,model,model_year,verified_at,verified_by) VALUES (?,'maker','model',2026,CURRENT_TIMESTAMP,'trusted-test')",vehicle.toString());
+        db.update("INSERT INTO maintenance_manufacturer_evidence (id,document_url,document_title,manufacturer,model,model_year_from,model_year_to,service_name,scope_text,interval_km,interval_months,verified_at,verified_by) VALUES (?,'https://example.test/manual','manual','maker','model',2025,2027,'oil','verified normal service',10000,12,CURRENT_TIMESTAMP,'trusted-test')",evidence.toString());
+        return evidence;
+    }
+
     private void authenticateDevice(UUID user) {
         db.update("DELETE FROM pairing_requests WHERE installation_id=?",installation.toString());
         db.update("INSERT INTO pairing_requests(id,installation_id,status,selected_vehicle_id,approved_user_id,updated_at) VALUES(?,?,'completed',?,?,CURRENT_TIMESTAMP)",

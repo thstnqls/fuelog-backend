@@ -40,8 +40,8 @@ public class ChargeCandidateController {
             summary = "충전 후보의 주변 사업자 참고요금 계산",
             description = "장치의 설치 Bearer로 후보 ID와 Pleos 위치 증거를 보냅니다. candidateId는 경로의 id와 같고 locationOperationId는 charge-estimate:{id}여야 합니다. "
                     + "source는 PLEOS_CURRENT_UPDATE, measuredAt·receivedAt은 ISO-8601 시각입니다. 위치는 최초 감지 시각부터 10초 안에 측정·수신되어야 하며 수신 후 2분 이내여야 합니다.\n\n"
-                    + "출력 구간별 서로 다른 사업자 2~3곳의 평균 단가와 추정 금액을 반환합니다. 좌표계 미검증은 COORDINATE_SYSTEM_UNVERIFIED, "
-                    + "비교 자료 부족은 INSUFFICIENT_COMPARABLE_STATIONS입니다. 여러 출력 구간은 POWER_BAND_SELECTION_REQUIRED로 구분합니다. "
+                    + "충전 시작 시점에 유효한 완속 요금으로 주변 사업자 최대 3곳의 평균 단가와 추정 금액을 반환합니다. 정상 참고값은 REFERENCE_ESTIMATE, 좌표계 미검증은 COORDINATE_SYSTEM_UNVERIFIED, "
+                    + "비교 자료 부족은 INSUFFICIENT_COMPARABLE_STATIONS입니다. "
                     + "이미 계산했거나 확인·기각된 후보는 기존 결과를 반환하며 원시 좌표는 저장하지 않습니다.")
     public View estimate(@RequestHeader(value="Authorization",required=false) String bearer,@PathVariable UUID id,@Valid @RequestBody Location body) { return service.estimate(bearer,id,body); }
     @PostMapping("/recording-intervals/{id}/charging-reference")

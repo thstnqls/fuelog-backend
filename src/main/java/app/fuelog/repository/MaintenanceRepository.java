@@ -232,25 +232,30 @@ public class MaintenanceRepository {
                 (r, n) -> r.getString(1), event.toString()).isEmpty();
     }
 
+    public List<ManufacturerDefault> manufacturerDefaults(UUID vehicle) {
+        var rows=db.query("SELECT id,service_name,interval_km,interval_months FROM maintenance_manufacturer_evidence WHERE revoked_at IS NULL ORDER BY service_name,id",
+                (r,n)->new ManufacturerDefault(UUID.fromString(r.getString("id")),r.getString("service_name"),r.getBigDecimal("interval_km"),r.getObject("interval_months",Integer.class),null,null));
+        var plans=plans(vehicle);
+        return rows.stream().map(row->new ManufacturerDefault(row.id(),row.name(),row.intervalKm(),row.intervalMonths(),
+                evidence(vehicle,row.id(),row.name(),row.intervalKm(),row.intervalMonths()),
+                plans.stream().filter(p->p.active() && p.shared() && row.id().equals(p.evidence())).map(PlanRow::id).findFirst().orElse(null))).toList();
+    }
+
+    public List<CompletedService> completedServices(UUID vehicle) {
+        return db.query("SELECT e.id,p.name,e.service_date,e.odometer_km,p.next_plan_id FROM maintenance_plans p JOIN maintenance_events e ON e.id=p.completion_event_id WHERE p.vehicle_id=? AND p.shared=TRUE AND p.completed_at IS NOT NULL AND e.deleted_at IS NULL ORDER BY p.completed_at DESC,p.id DESC LIMIT 50",
+                (r,n)->new CompletedService(UUID.fromString(r.getString("id")),r.getString("name"),r.getObject("service_date",LocalDate.class),r.getBigDecimal("odometer_km"),UUID.fromString(r.getString("next_plan_id"))),vehicle.toString());
+    }
+
     public Evidence evidence(
             UUID vehicle, UUID evidence, String name, BigDecimal km, Integer months) {
         if (evidence == null) return null;
         var rows =
                 db.query(
-                        "SELECT e.*, p.manufacturer AS vehicle_manufacturer, p.model AS"
-                            + " vehicle_model, p.model_year FROM maintenance_manufacturer_evidence"
-                            + " e LEFT JOIN vehicle_maintenance_profiles p ON p.vehicle_id=? WHERE"
-                            + " e.id=?",
+                        "SELECT e.* FROM maintenance_manufacturer_evidence e WHERE e.id=?",
                         (r, n) -> {
                             boolean valid =
                                     r.getObject("revoked_at") == null
                                             && r.getObject("verified_at") != null
-                                            && r.getString("manufacturer")
-                                                    .equals(r.getString("vehicle_manufacturer"))
-                                            && r.getString("model")
-                                                    .equals(r.getString("vehicle_model"))
-                                            && r.getInt("model_year") >= r.getInt("model_year_from")
-                                            && r.getInt("model_year") <= r.getInt("model_year_to")
                                             && name.equals(r.getString("service_name"))
                                             && !r.getString("scope_text").isBlank()
                                             && !r.getString("document_title").isBlank()
@@ -270,7 +275,6 @@ public class MaintenanceRepository {
                                     r.getString("scope_text"),
                                     valid);
                         },
-                        vehicle.toString(),
                         evidence.toString());
         return rows.isEmpty() ? null : rows.getFirst();
     }
