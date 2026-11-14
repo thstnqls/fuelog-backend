@@ -44,9 +44,27 @@ class PairingServiceTests {
     }
 
     @Test
+    void explicitInvalidKeyReusesVehicleWithoutBypassingMembership() {
+        UUID user = UUID.randomUUID();
+        UUID first = service.createInstallation().installation_id();
+        var qr = service.issue(first, "common-first", "Car", "[invalid]");
+        var intent = service.intent(user, qr.id(), "common-intent",
+                new PairingDtos.IntentRequest(qr.qr().proof(), null, "Car"));
+        UUID vehicle = service.confirm(first, qr.id(), intent.confirmation_code()).vehicle_id();
+        UUID next = service.createInstallation().installation_id();
+        var restored = service.issue(next, "common-next", "Car", "INVALID");
+        assertThrows(Exception.class, () -> service.preview(UUID.randomUUID(),
+                new PairingDtos.PreviewRequest(restored.id(), restored.qr().proof())));
+        var selected = service.intent(user, restored.id(), "common-restore",
+                new PairingDtos.IntentRequest(restored.qr().proof(), null, "Car"));
+        assertEquals(vehicle, service.confirm(next, restored.id(), selected.confirmation_code()).vehicle_id());
+        assertEquals(1, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));
+    }
+
+    @Test
     void unavailableVinMarkersCannotBecomeVehicleIdentifiers() {
         UUID installation = service.createInstallation().installation_id();
-        for (String marker : new String[]{"invalid", "invaild", "<invalid>", "[invalid]", "invaild!!", "undefined"})
+        for (String marker : new String[]{"invaild", "invaild!!", "undefined"})
             assertThrows(Exception.class, () -> service.issue(installation, "invalid-marker", "Car", marker));
         assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM pairing_requests", Integer.class));
         assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM vehicles", Integer.class));

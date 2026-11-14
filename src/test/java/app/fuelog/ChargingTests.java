@@ -99,19 +99,32 @@ class ChargingTests {
         assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM charge_candidates",Integer.class));
     }
     @Test void locationOperationIsOneShotAndRepricingUsesTheFrozenMean() {
-        Fixture f=fixture(); station("a","PI",37,127,50);station("b","ME",37.001,127,50);
+        Fixture f=fixture(); station("a","PI",37,127,7);station("b","ME",37.001,127,7);
         Sync b=new Sync(UUID.randomUUID(),f.interval,f.user,now.minusSeconds(40).toEpochMilli(),now.minusSeconds(5).toEpochMilli(),BigDecimal.TEN,"AAOS_WH");
         charges.sync(f.bearer,b);
         Location location=new Location(b.id(),"charge-estimate:"+b.id(),37.0,127.0,now.minusSeconds(4),now.minusSeconds(3),"PLEOS_CURRENT_UPDATE");
         View priced=charges.estimate(f.bearer,b.id(),location);
         assertEquals("REFERENCE_ESTIMATE",priced.estimateStatus());
+        assertEquals("SLOW",priced.scenarios().getFirst().powerBand());
         assertEquals(priced,charges.estimate(f.bearer,b.id(),location));
         db.update("UPDATE charging_tariffs SET won_per_kwh=900");
         View increased=charges.sync(f.bearer,new Sync(b.id(),b.intervalId(),b.owner(),b.startAt(),b.endAt()+1000,new BigDecimal("12"),b.basis()));
         assertEquals(0,priced.scenarios().getFirst().averageWonPerKwh().compareTo(increased.scenarios().getFirst().averageWonPerKwh()));
-        assertEquals(new BigDecimal("3904"),increased.scenarios().getFirst().estimatedAmount());
+        assertEquals(new BigDecimal("3540"),increased.scenarios().getFirst().estimatedAmount());
         String stored=db.queryForObject("SELECT payload FROM charge_candidates WHERE id=?",String.class,b.id().toString());
         assertFalse(stored.contains("latitude"));assertFalse(stored.contains("longitude"));
+    }
+    @Test void chargeUsesOnlySlowTariffsValidAtChargeStart() {
+        Fixture f=fixture(); station("fast","PI",37,127,50);
+        Sync b=new Sync(UUID.randomUUID(),f.interval,f.user,now.minusSeconds(40).toEpochMilli(),now.minusSeconds(5).toEpochMilli(),BigDecimal.TEN,"AAOS_WH");
+        charges.sync(f.bearer,b);
+        Location location=new Location(b.id(),"charge-estimate:"+b.id(),37.0,127.0,now.minusSeconds(4),now.minusSeconds(3),"PLEOS_CURRENT_UPDATE");
+        assertTrue(charges.estimate(f.bearer,b.id(),location).scenarios().isEmpty());
+        station("slow","PI",37,127,7);
+        db.update("UPDATE charging_tariffs SET verified_at=?",time(now.minusSeconds(20)));
+        Sync later=new Sync(UUID.randomUUID(),f.interval,f.user,b.startAt(),b.endAt(),BigDecimal.TEN,"AAOS_WH");
+        charges.sync(f.bearer,later);
+        assertTrue(charges.estimate(f.bearer,later.id(),new Location(later.id(),"charge-estimate:"+later.id(),37.0,127.0,location.measuredAt(),location.receivedAt(),"PLEOS_CURRENT_UPDATE")).scenarios().isEmpty());
     }
     @Test void unknownCoordinateSystemAndLateLocationsKeepTheCandidateWithoutPrice() {
         Fixture f=fixture();

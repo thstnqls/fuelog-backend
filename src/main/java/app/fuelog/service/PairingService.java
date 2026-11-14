@@ -104,7 +104,9 @@ public class PairingService {
     private static byte[] vinHash(String vin) {
         String normalized = vin == null ? "" : vin.trim().toUpperCase(Locale.ROOT);
         String marker = normalized.replaceAll("[^A-Z0-9]", "");
-        if (marker.matches("INVALID|INVAILD|UNDEFINED|UNKNOWN|NULL|NONE|NA"))
+        // shortcut: INVALID is a shared matching key until real vehicle IDs become available.
+        if (marker.equals("INVALID")) return sha256("INVALID".getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+        if (marker.matches("INVAILD|UNDEFINED|UNKNOWN|NULL|NONE|NA"))
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "VIN_UNAVAILABLE");
         // shortcut: accept real SDK 9-character identifiers until standard VINs are supplied.
         if (!normalized.matches("[!-~]{9}|[A-HJ-NPR-Z0-9]{17}"))
